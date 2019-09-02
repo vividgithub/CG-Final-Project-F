@@ -1,0 +1,49 @@
+{
+    "dataset": {
+        "name": "ModelNet40-2048",
+        "train_load_policy": "normal",
+        "test_load_policy": "normal",
+        "train_transforms": [
+            {"name": "clip-feature", "c": 3},
+            {"name": "scaling", "range": (0.0, 0.1)},
+            {"name": "rotation", "policy": "euler", "range": [(0.0, 0.0), (0.0, 3.1415926), (0.0, 0.0)]},
+            "------------",
+            {"name": "sampling", "sample_num": 1024, "policy": "random", "variance": 0.125, "clip": 0.25},
+        ],
+        "test_transforms": [
+            {"name": "clip-feature", "c": 3},
+            "------------",
+            {"name": "sampling", "sample_num": 1024, "policy": "random"}
+        ]
+    },
+    "net": {
+        "structure": {
+            "name": "resnet-1",
+            "layers": [
+                {"name": "conv-xconv", "k": 8, "d": 1, "p": -1, "c": 16 * 3, "with_global": True},
+                {"name": "conv-xconv", "k": 12, "d": 2, "p": 384, "c": 32 * 3, "with_global": True},
+                {"name": "conv-xconv", "k": 16, "d": 2, "p": 128, "c": 64 * 3, "with_global": True},
+                {"name": "conv-xconv", "k": 16, "d": 3, "p": 128, "c": 128 * 3, "with_global": True},
+                {"name": "pooling-dense", "channels": [128 * 3, 64 * 3], "dropout": [0.0, 0.8]}
+            ]
+        }
+    },
+    "control": {
+        "validation_step": 500,
+        "train_epoch": 1024,
+        "batch_size": 128,
+        "learning_rate": {
+            "name": "exponential_decay",
+            "base": 0.01,
+            "decay_step": 8000,
+            "decay_rate": 0.5,
+            "learning_rate_min": 1e-6,
+            "staircase": True
+        },
+        "weight_decay": 1e-5,
+        "optimizer": {
+            "name": "adam",
+            "epsilon": 1e-2
+        }
+    }
+}
