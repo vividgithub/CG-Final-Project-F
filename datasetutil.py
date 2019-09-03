@@ -172,10 +172,10 @@ def transform_sampling(sample_num, policy="random", variance=0.0, clip=0.0, **kw
     :param variance: The standard deviation of the guass sampling kernel
     :param clip: The clip factor, the final point will not less that sample_num * (1 - clip) and not more than
     sample_num * (1 + clip)
-    :return: A sampling function (BxNxF) -> (BxN'xF), where N' is the actual sampling number,
+    :return: A sampling function (BxNxF, _) -> (BxN'xF, _), where N' is the actual sampling number,
     N' is a random variable of normal distribution with mean = sample_num and stddev = variance. N' will be
     further clipped to ensure that it's value is not larger than sample_num * (1 + clip) and not smaller than
-    sample_num * (1 - clip)
+    sample_num * (1 - clip). "_" indicates the label input will remain unchanged.
     """
 
     def _transform_sampling(points, sample_num, policy, variance, clip):
@@ -204,7 +204,8 @@ def transform_scaling(range=(0.0, 0.05), **kwargs):
     Given an input of NxF, random scaling the coordinate. That is, transform the first 3 features but remains the
     other features unchanged
     :param range: The random scaling range
-    :return: A function (NxF) -> (NxF), where the return point features have been transformed
+    :return: A function (NxF, _) -> (NxF, _), where the return point features have been transformed.
+    "_" indicates the label input will remain unchanged.
     """
     return lambda points, label: (
         tf.concat(
@@ -223,7 +224,8 @@ def transform_rotation(policy, range, **kwargs):
     rotation.
     :param range: The rotation range. For "euler" policy, it should be a list [(xmin,xmax), (ymin, ymax), (zmin,zmax)],
     the angle for rotation in each axis (in radians). For "quaternion" policy, ...
-    :return: A function (NxF) -> (NxF), where the return point features have been transformed
+    :return: A function (NxF, _) -> (NxF, _), where the return point features have been transformed.
+    "_" indicates the label input will remain unchanged.
     """
     def _transform_rotation(points, policy, range):
         if policy == "euler":
