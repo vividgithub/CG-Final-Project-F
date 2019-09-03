@@ -162,7 +162,7 @@ class DatasetTransformTestCase(PointSynthesisTestCase):
             self.assertArrayEqual(label, label_)
 
             self.assertTrue(points.shape[0] == points_.shape[0])
-            self.assertTrue(points.shape[2] =g points_.shape[2])
+            self.assertTrue(points.shape[2] == points_.shape[2])
 
             n_ = points.shape[1]
 

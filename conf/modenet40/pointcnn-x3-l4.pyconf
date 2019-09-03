@@ -19,12 +19,14 @@
     "net": {
         "structure": {
             "name": "resnet-1",
+            "extend_feature": "none",
             "layers": [
-                {"name": "conv-xconv", "k": 8, "d": 1, "p": -1, "c": 16 * 3, "with_global": True},
-                {"name": "conv-xconv", "k": 12, "d": 2, "p": 384, "c": 32 * 3, "with_global": True},
-                {"name": "conv-xconv", "k": 16, "d": 2, "p": 128, "c": 64 * 3, "with_global": True},
-                {"name": "conv-xconv", "k": 16, "d": 3, "p": 128, "c": 128 * 3, "with_global": True},
-                {"name": "pooling-dense", "channels": [128 * 3, 64 * 3], "dropout": [0.0, 0.8]}
+                {"name": "conv-xconv", "k": 8, "d": 1, "c": 16 * 3, "cpf": 24, "depth_multiplier": 4, "sampling": "random", "sorting_method": None, "with_global": False},
+                {"name": "pooling-xconv", "k": 12, "d": 2, "p": 384, "c": 32 * 3, "cpf": 12, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
+                {"name": "pooling-xconv", "k": 16, "d": 2, "p": 128, "c": 64 * 3, "cpf": 24, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
+                {"name": "pooling-xconv", "k": 16, "d": 3, "p": 128, "c": 128 * 3, "cpf": 48, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": True},
+                {"name": "pooling-dense", "channels": [128 * 3, 64 * 3], "dropout": [0.0, 0.8]},
+                {"name": "output-classification"}
             ]
         }
     },
