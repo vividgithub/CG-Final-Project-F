@@ -18,7 +18,7 @@
     },
     "net": {
         "structure": {
-            "name": "resnet-1",
+            "name": "sequence",
             "extend_feature": "none",
             "layers": [
                 {"name": "conv-xconv", "k": 8, "d": 1, "c": 16 * 3, "cpf": 24, "depth_multiplier": 4, "sampling": "random", "sorting_method": None, "with_global": False},
