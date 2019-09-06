@@ -1,8 +1,12 @@
 import tensorflow as tf
 import legacy.pointfly as pf
+from computil import ComputationContext
 
-class XConvLayer(tf.keras.layers.Layer):
 
+class XConvLayerCoreV2(tf.keras.layers.Layer):
+    """
+    The X-Conv kernel used in "PointCNN"(https://arxiv.org/abs/1801.07791)
+    """
     def __init__(self, p, k, d, c, cpf, depth_multiplier=2, sampling="random", sorting_method=None, with_global=False):
         """
         The X-Conv kernel, from "PointCNN"(https://arxiv.org/abs/1801.07791). It takes an tensor input
@@ -19,7 +23,7 @@ class XConvLayer(tf.keras.layers.Layer):
         :param sorting_method: How to give the point order before convolution. Currently it is just a placeholder
         :param with_global: Whether to add the global position in convolution
         """
-        super(XConvLayer, self).__init__()
+        super(XConvLayerCoreV2, self).__init__()
         self.p = p
         self.k = k
         self.d = d
@@ -31,80 +35,98 @@ class XConvLayer(tf.keras.layers.Layer):
         self.sorting_method = sorting_method
         self.with_global = with_global
 
-        # l_dense1 and l_dense2 used in converting the position features
-        self.l_dense1 = tf.keras.layers.Dense(self.cpf)
-        self.l_bn1 = tf.keras.layers.BatchNormalization()
-        self.l_dense2 = tf.keras.layers.Dense(self.cpf)
-        self.l_bn2 = tf.keras.layers.BatchNormalization()
+        # l_pos_to_feature doing a series operation to expand position (B, N, 3) into large tensor space (B, N, cpf)
+        self.l_pos2feature = (
+            tf.keras.layers.Dense(self.cpf),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Dense(self.cpf),
+            tf.keras.layers.BatchNormalization()
+        )
 
-        # The X-conv core, it uses 3 convolution kernel to transform the local coordinate (B, N, k, 3)
-        # ->(conv1, bn) -> (B, N, k, k) ->(conv2, bn) -> (B, N, k, k) ->(conv3, bn) -> (B, N, k, k)
-        self.l_conv1 = tf.keras.layers.Conv2D(self.k * self.k, (1, self.k), activation="elu")
-        self.l_bn3 = tf.keras.layers.BatchNormalization()
-        self.l_conv2 = tf.keras.layers.DepthwiseConv2D((1, self.k), depth_multiplier=self.k, activation="elu")
-        self.l_bn4 = tf.keras.layers.BatchNormalization()
-        self.l_conv3 = tf.keras.layers.DepthwiseConv2D((1, self.k), depth_multiplier=self.k, activation="elu")
-        self.l_bn5 = tf.keras.layers.BatchNormalization()
+        # The X-conv core, it uses 3 convolution kernel to transform the local coordinate (B, p, k, 3)
+        # ->(conv1, bn) -> (B, p, k, k) ->(conv2, bn) -> (B, p, k, k) ->(conv3, bn) -> (B, p, k, k)
+        self.l_xconv1 = (
+            tf.keras.layers.Conv2D(self.k * self.k, (1, self.k), activation="elu"),
+            tf.keras.layers.BatchNormalization()
+        )
+        self.l_xconv2 = (
+            tf.keras.layers.DepthwiseConv2D((1, self.k), depth_multiplier=self.k, activation="elu"),
+            tf.keras.layers.BatchNormalization()
+        )
+        self.l_xconv3 = (
+            tf.keras.layers.DepthwiseConv2D((1, self.k), depth_multiplier=self.k, activation="elu"),
+            tf.keras.layers.BatchNormalization()
+        )
 
-        # Final convolution
-        self.l_conv4 = tf.keras.layers.SeparableConv2D(self.c, (1, self.k), depth_multiplier=self.depth_multiplier, activation="elu")
-        self.l_bn6 = tf.keras.layers.BatchNormalization()
+        # Final convolution, converts (B, p, k, cpf + F) to (B, p, c)
+        self.l_final_conv = (
+            tf.keras.layers.SeparableConv2D(self.c, (1, self.k), depth_multiplier=self.depth_multiplier,
+                                            activation="elu"),
+            tf.keras.layers.BatchNormalization()
+        )
 
-    def call(self, inputs, **kwargs):
-        pts = inputs[:, :, :3]  # (B, N, 3)
-        fts = inputs[:, :, 3:]  # (B, N, F)
+        # Convert the global position to feature
+        self.l_global_pos2feature = (
+            tf.keras.layers.Dense(self.c // 4, activation="elu"),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Dense(self.c // 4, activation="elu"),
+            tf.keras.layers.BatchNormalization()
+        )
+
+    def call(self, inputs, *args, **kwargs):
+        c = ComputationContext(*args, **kwargs)
+        p = inputs[:, :, :3]  # (B, N, 3)
+        f = inputs[:, :, 3:]  # (B, N, F)
 
         shape = tf.shape(inputs)
         B = shape[0]
-        N = shape[1]
+        N = self.p if self.p > 0 else shape[1]
 
         # Get the sampling points
         # Not so randomly, only follow the original implementations
-        qrs = pts if self.p < 0 else pts[:, :self.p, :]  # (B, p, 3)
+        q = p if self.p < 0 else p[:, :self.p, :]  # (B, p, 3)
 
         # Get the neighborhood indices
-        _, indices_dilated = pf.knn_indices_general(qrs, pts, self.k * self.d, True)  # (B, p, k*d, 2)
+        _, indices_dilated = pf.knn_indices_general(q, p, self.k * self.d, True)  # (B, p, k*d, 2)
         indices = indices_dilated[:, :, ::self.d, :]  # (B, p, k, 2)
 
         # Sort the points
         # TODO:
 
         # Group and convert to local coordinate
-        nn_pts = tf.gather_nd(pts, indices)  # (B, p, k, 3)
-        nn_pts_center = tf.expand_dims(qrs, axis=2)  # (B, p, 1, 3)
-        nn_pts_local = tf.subtract(nn_pts, nn_pts_center)  # (B, p, k, 3)
+        p_ = tf.gather_nd(p, indices) - tf.expand_dims(q, axis=2)  # (B, p, k, 3) - (B, p, 1, 3) = (B, p, k, 3)
 
         # Convert position into features
-        nn_fts_from_pts_0 = self.l_dense1(nn_pts_local, **kwargs)  # (B, p, k, cpf)
-        nn_fts_from_pts_0 = self.l_bn1(nn_fts_from_pts_0, **kwargs)  # (B, p, k, cpf)
+        f_ = c(self.l_pos2feature, p_)  # (B, p, k, 3) -> (B, p, k, cpf)
 
-        nn_fts_from_pts = self.l_dense2(nn_fts_from_pts_0, **kwargs)  # (B, p, k, cpf)
-        nn_fts_from_pts = self.l_bn2(nn_fts_from_pts, **kwargs)  # (B, p, k, cpf)
-
-        nn_fts_from_prev = tf.gather_nd(fts, indices)  # (B, p, k, f)
-        nn_fts_input = tf.concat([nn_fts_from_pts, nn_fts_from_prev], axis=-1)  # (B, p, k, cpf + f)
+        # Concat the origin feature
+        f_ = tf.concat([f_, tf.gather_nd(f, indices)], axis=-1)  # (B, p, k, cpf) ~concat~ (B, p, k, F) = (B, p, k, cpf + F)
 
         # X convolution core
-        X_0 = self.l_conv1(nn_pts_local, **kwargs)
-        X_0 = self.l_bn3(X_0, **kwargs)
-        X_0_KK = tf.reshape(X_0, (B, N, self.k, self.k))
+        x_conv_mat = tf.reshape(c(self.l_xconv1, p_), (B, N, self.k, self.k))  # (B, p, k, 3) -> (B, p, k, k)
+        x_conv_mat = tf.reshape(c(self.l_xconv2, x_conv_mat), (B, N, self.k, self.k))  # (B, p, k, k) -> (B, p, k, k)
+        x_conv_mat = tf.reshape(c(self.l_xconv3, x_conv_mat), (B, N, self.k, self.k))  # (B, p, k, k) -> (B, p, k, k)
 
-        X_1 = self.l_conv2(X_0_KK, **kwargs)
-        X_1 = self.l_bn4(X_1, **kwargs)
-        X_1_KK = tf.reshape(X_1, (B, N, self.k, self.k))
-
-        X_2 = self.l_conv3(X_1_KK, **kwargs)
-        X_2 = self.l_bn5(X_2, **kwargs)
-        X_2_KK = tf.reshape(X_2, (B, N, self.k, self.k))
-
-        fts_X = tf.linalg.matmul(X_2_KK, nn_fts_input)  # (B, p, k, cpf + f)
+        # Matrix multiplication
+        f_ = tf.linalg.matmul(x_conv_mat, f_)  # (B, p, k, k) x (B, p, k, cpf + f) = (B, p, k, cpf + f)
 
         # Final convolution
-        fts_conv = self.l_conv4(fts_X, **kwargs)  # (B, p, 1, c)
-        fts_conv = self.l_bn6(fts_conv, **kwargs)  # (B, p, 1, c)
-        fts_conv_3d = tf.squeeze(fts_conv, axis=2)  # (B, p, c)
+        f_ = tf.squeeze(c(self.l_final_conv, f_), axis=2)  # (B, p, k, cpf + f) -> (B, p, 1, c) ->(squeeze)-> (B, p, c)
 
         # With global feature
-        # TODO:
+        if self.l_global_pos2feature:
+            f_global = c(self.l_global_pos2feature, q)  # (B, p, 3) -> (B, p, c/4)
+            f_ = tf.concat([f_global, f_], axis=-1)  # (B, p, c/4) ~concat~ (B, p, c) = (B, p, c + c/4)
 
-        return fts_conv_3d
+        return f_
+
+
+XConvPoolingLayer = XConvLayerCoreV2
+
+class XConvLayer(XConvLayerCoreV2):
+    """
+    The actual convolution layer. Different from the XConvLayerCore, it doesn't take "p" as a parameter, it maps
+    an input of (BxNxF) tensor to (BxNxc) tensor.
+    """
+    def __init__(self, *args, **kwargs):
+        super(XConvLayer, self).__init__(-1, *args, **kwargs)
