@@ -8,3 +8,5 @@ Currently under development
 - 2019.09.03 `Jianwei Jiang`: Add rotation and sampling transform test
 - 2019.09.04 `Jianwei Jiang`: Add `XConvLayer` for x-convolution in PointCNN
 - 2019.09.06 `Jianwei Jiang`: Refine `XConvLayer`, add several computation utility
+- 2019.09.09 `Jianwei Jiang`: Add `FeatureReshape` layer, initialize the function of generating complete network from 
+single configuration file: `modelutil.net_from_conf` (not yet completed)

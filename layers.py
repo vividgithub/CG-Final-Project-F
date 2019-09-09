@@ -7,7 +7,7 @@ class XConvLayerCoreV2(tf.keras.layers.Layer):
     """
     The X-Conv kernel used in "PointCNN"(https://arxiv.org/abs/1801.07791)
     """
-    def __init__(self, p, k, d, c, cpf, depth_multiplier=2, sampling="random", sorting_method=None, with_global=False):
+    def __init__(self, p, k, d, c, cpf, depth_multiplier=2, sampling="random", sorting_method=None, with_global=False, **kwargs):
         """
         The X-Conv kernel, from "PointCNN"(https://arxiv.org/abs/1801.07791). It takes an tensor input
         (BxNxF) and generate a tensor with shape (Bxpxc).
@@ -79,8 +79,8 @@ class XConvLayerCoreV2(tf.keras.layers.Layer):
         f = inputs[:, :, 3:]  # (B, N, F)
 
         shape = tf.shape(inputs)
-        B = shape[0]
-        N = self.p if self.p > 0 else shape[1]
+        B = shape[0]  # Batch size
+        N = self.p if self.p > 0 else shape[1]  # Number of points for output
 
         # Get the sampling points
         # Not so randomly, only follow the original implementations
@@ -99,8 +99,9 @@ class XConvLayerCoreV2(tf.keras.layers.Layer):
         # Convert position into features
         f_ = c(self.l_pos2feature, p_)  # (B, p, k, 3) -> (B, p, k, cpf)
 
-        # Concat the origin feature
-        f_ = tf.concat([f_, tf.gather_nd(f, indices)], axis=-1)  # (B, p, k, cpf) ~concat~ (B, p, k, F) = (B, p, k, cpf + F)
+        # Concat the origin feature, cannot concat when it only has position feature
+        if tf.shape(f)[2] > 0:
+            f_ = tf.concat([f_, tf.gather_nd(f, indices)], axis=-1)  # (B, p, k, cpf) ~concat~ (B, p, k, F) = (B, p, k, cpf + F)
 
         # X convolution core
         x_conv_mat = tf.reshape(c(self.l_xconv1, p_), (B, N, self.k, self.k))  # (B, p, k, 3) -> (B, p, k, k)
@@ -118,10 +119,11 @@ class XConvLayerCoreV2(tf.keras.layers.Layer):
             f_global = c(self.l_global_pos2feature, q)  # (B, p, 3) -> (B, p, c/4)
             f_ = tf.concat([f_global, f_], axis=-1)  # (B, p, c/4) ~concat~ (B, p, c) = (B, p, c + c/4)
 
-        return f_
+        return tf.concat([q, f_], axis=-1)  # (B, p, c + c/4) ~concat~ (B, p, 3) = (B, p, 3 + c + c/4)
 
 
 XConvPoolingLayer = XConvLayerCoreV2
+
 
 class XConvLayer(XConvLayerCoreV2):
     """
@@ -130,3 +132,47 @@ class XConvLayer(XConvLayerCoreV2):
     """
     def __init__(self, *args, **kwargs):
         super(XConvLayer, self).__init__(-1, *args, **kwargs)
+
+
+class FeatureReshapeLayer(tf.keras.layers.Layer):
+    """
+    A feature resize layer that reshape the feature dimension using several dense layer with dropout
+    """
+    def __init__(self, channels, dropout, **kwargs):
+        super(FeatureReshapeLayer, self).__init__()
+
+        self.channels = channels
+        self.dropout = dropout
+        self.layers = []
+
+        for channel_size, dropout_rate in zip(channels, dropout):
+            self.layers.append(tf.keras.layers.Dense(channel_size))
+            if dropout_rate > 0.0:
+                self.layers.append(tf.keras.layers.Dropout(dropout_rate))
+            self.layers.append(tf.keras.layers.BatchNormalization())
+
+    def call(self, inputs, *args, **kwargs):
+        c = ComputationContext(*args, **kwargs)
+        p = inputs[:, :, :3]  # (B, N, 3)
+        f = inputs[:, :, 3:]  # (B, N, F)
+
+        f_ = c(self.layers, f)  # (B, N, F) -> (B, N, self.channels[-1])
+
+        return tf.concat([p, f_], axis=-1)
+
+
+def layer_from_config(layer_conf):
+    """
+    Create a layer from configuration
+    :param conf: The configuration dict, where it should have an "name" entry specified the name of
+    the layer and other parameter to initialize the layer
+    :return: A corresponding keras layer
+    """
+    layer_map = {
+        "conv-xconv": XConvLayer,
+        "pooling-xconv": XConvPoolingLayer,
+        "feature-reshape": FeatureReshapeLayer
+    }
+
+    assert layer_conf["name"] in layer_map, "Did not find layer with name \"{}\"".format(layer_conf["name"])
+    return layer_map[layer_conf["name"]](**layer_conf)

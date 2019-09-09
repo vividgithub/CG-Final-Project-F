@@ -6,17 +6,7 @@ from logger import log
 import random
 import legacy.pointfly as pf
 import transforms3d
-
-
-def pyconf(filepath):
-    """
-    Load a *.pyconf from specified file path
-    :param filepath: The file path for pyconf
-    :return: A dictionary for the configuration
-    """
-    assert path.exists(filepath) and not path.isdir(filepath), "{} doesn't exist or it is a directory".format(filepath)
-    with open(filepath) as f:
-        return eval(f.read())
+import ioutil
 
 
 def apply_transforms(dataset, confs, batch_size):
@@ -122,7 +112,7 @@ def load_dataset(dir, model_conf):
     dir = path.abspath(dir)
 
     conf_path = path.join(dir, "conf.pyconf")
-    conf = pyconf(conf_path)
+    conf = ioutil.pyconf(conf_path)
 
     assert conf["type"]["name"] in loaders, "Invalid dataset type for {}".format(conf["type"])
 
@@ -132,7 +122,7 @@ def load_dataset(dir, model_conf):
     train_dataset = apply_transforms(train_dataset, model_conf["dataset"].get("train_transforms", []), batch_size)
     test_dataset = apply_transforms(test_dataset, model_conf["dataset"].get("test_transforms", []), batch_size)
 
-    return train_dataset, test_dataset
+    return train_dataset, test_dataset, conf
 
 
 def transform_clip_feature(c=3, **kwargs):
