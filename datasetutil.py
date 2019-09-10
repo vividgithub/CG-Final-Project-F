@@ -122,6 +122,8 @@ def load_dataset(dir, model_conf):
     train_dataset = apply_transforms(train_dataset, model_conf["dataset"].get("train_transforms", []), batch_size)
     test_dataset = apply_transforms(test_dataset, model_conf["dataset"].get("test_transforms", []), batch_size)
 
+    # TODO: Shuffle train
+
     return train_dataset, test_dataset, conf
 
 
