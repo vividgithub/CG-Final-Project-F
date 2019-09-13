@@ -32,11 +32,13 @@ class ComputationContext:
         :return: The outputs after the layer(s)
         """
         outputs = inputs
-        if isinstance(layers, Iterable):
-            for layer in flatten(layers):
-                outputs = layer(outputs, *self.args, **self.kwargs)
-        else:
-            outputs = layers(outputs)
+        # if isinstance(layers, Iterable):
+        #     for layer in flatten(layers):
+        #         outputs = layer(outputs, *self.args, **self.kwargs)
+        # else:
+        #     outputs = layers(outputs)
+        for layer in layers:
+            outputs = layer(outputs, *self.args, **self.kwargs)
         return outputs
 
 

@@ -4,16 +4,18 @@
         "train_load_policy": "normal",
         "test_load_policy": "normal",
         "train_transforms": [
+            {"name": "repeat"},
+            {"name": "shuffle", "buffer_multiplier": 4},
             {"name": "clip-feature", "c": 3},
             {"name": "scaling", "range": (0.0, 0.1)},
             {"name": "rotation", "policy": "euler", "range": [(0.0, 0.0), (0.0, 3.1415926), (0.0, 0.0)]},
             "------------",
-            {"name": "sampling", "sample_num": 1024, "policy": "random", "variance": 0.125, "clip": 0.25}
+            {"name": "sampling", "sample_num": 1024, "policy": "random-gauss", "stddev": 128, "range": (768, 1280)}
         ],
         "test_transforms": [
             {"name": "clip-feature", "c": 3},
             "------------",
-            {"name": "sampling", "sample_num": 1024, "policy": "random"}
+            {"name": "sampling", "sample_num": 1024, "policy": "normal"}
         ]
     },
     "net": {
@@ -25,7 +27,7 @@
             {"name": "pooling-xconv", "k": 16, "d": 2, "p": 128, "c": 64 * 3, "cpf": 24, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
             {"name": "pooling-xconv", "k": 16, "d": 3, "p": 128, "c": 128 * 3, "cpf": 48, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": True},
             {"name": "feature-reshape", "channels": [128 * 3, 64 * 3], "dropout": [0.0, 0.8]},
-            {"name": "output-segmentation"}  # Indicate the output is (B, N, @class_count) instead of (B, @class_count)
+            {"name": "output-segmentation", "output_size": 128}  # Indicate the output is (B, N, @class_count) instead of (B, @class_count)
         ]
     },
     "control": {
@@ -38,7 +40,6 @@
             "initial_learning_rate": 0.01,
             "decay_steps": 8000,
             "decay_rate": 0.5,
-            "learning_rate_min": 1e-6,
             "staircase": True
         },
         "optimizer": {

@@ -66,12 +66,15 @@ class XConvLayerCoreV2(tf.keras.layers.Layer):
         )
 
         # Convert the global position to feature
-        self.l_global_pos2feature = (
-            tf.keras.layers.Dense(self.c // 4, activation="elu"),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Dense(self.c // 4, activation="elu"),
-            tf.keras.layers.BatchNormalization()
-        )
+        if with_global:
+            self.l_global_pos2feature = (
+                tf.keras.layers.Dense(self.c // 4, activation="elu"),
+                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.Dense(self.c // 4, activation="elu"),
+                tf.keras.layers.BatchNormalization()
+            )
+        else:
+            self.l_global_pos2feature = None
 
     def call(self, inputs, *args, **kwargs):
         c = ComputationContext(*args, **kwargs)
@@ -100,8 +103,7 @@ class XConvLayerCoreV2(tf.keras.layers.Layer):
         f_ = c(self.l_pos2feature, p_)  # (B, p, k, 3) -> (B, p, k, cpf)
 
         # Concat the origin feature, cannot concat when it only has position feature
-        if tf.shape(f)[2] > 0:
-            f_ = tf.concat([f_, tf.gather_nd(f, indices)], axis=-1)  # (B, p, k, cpf) ~concat~ (B, p, k, F) = (B, p, k, cpf + F)
+        f_ = tf.concat([f_, tf.gather_nd(inputs, indices)[:, :, :, 3:]], axis=-1)  # (B, p, k, cpf) ~concat~ (B, p, k, F) = (B, p, k, cpf + F)
 
         # X convolution core
         x_conv_mat = tf.reshape(c(self.l_xconv1, p_), (B, N, self.k, self.k))  # (B, p, k, 3) -> (B, p, k, k)
@@ -115,7 +117,7 @@ class XConvLayerCoreV2(tf.keras.layers.Layer):
         f_ = tf.squeeze(c(self.l_final_conv, f_), axis=2)  # (B, p, k, cpf + f) -> (B, p, 1, c) ->(squeeze)-> (B, p, c)
 
         # With global feature
-        if self.l_global_pos2feature:
+        if self.with_global:
             f_global = c(self.l_global_pos2feature, q)  # (B, p, 3) -> (B, p, c/4)
             f_ = tf.concat([f_global, f_], axis=-1)  # (B, p, c/4) ~concat~ (B, p, c) = (B, p, c + c/4)
 

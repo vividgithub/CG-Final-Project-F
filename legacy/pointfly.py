@@ -152,6 +152,7 @@ def knn_indices(points, k, sort=True, unique=True):
     distances, point_indices = tf.nn.top_k(-D, k=k, sorted=sort)
     batch_indices = tf.tile(tf.reshape(tf.range(batch_size), (-1, 1, 1, 1)), (1, point_num, k, 1))
     indices = tf.concat([batch_indices, tf.expand_dims(point_indices, axis=3)], axis=3)
+
     return -distances, indices
 
 
@@ -167,6 +168,10 @@ def knn_indices_general(queries, points, k, sort=True, unique=True):
     distances, point_indices = tf.math.top_k(-D, k=k, sorted=sort)  # (N, P, K)
     batch_indices = tf.tile(tf.reshape(tf.range(batch_size), (-1, 1, 1, 1)), (1, point_num, k, 1))
     indices = tf.concat([batch_indices, tf.expand_dims(point_indices, axis=3)], axis=3)
+
+    qshape = queries.get_shape()  # (B, P, 3)
+    indices.set_shape((qshape[0], qshape[1], k, 2))
+
     return -distances, indices
 
 

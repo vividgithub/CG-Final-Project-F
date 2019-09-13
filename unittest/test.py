@@ -147,16 +147,16 @@ class DatasetTransformTestCase(PointSynthesisTestCase):
 
     def test_sampling_transform(self):
         confs = [
-            (2048, 1024, 0.24, 0.1),
-            (1024, 768, 0.5, 0.15),
-            (512, 458, 1, 0.1)
+            (2048, 1024, 245, (921, 1126)),
+            (1024, 768, 384, (652, 883)),
+            (512, 458, 458, (412, 503))
         ]
 
-        for n, sample_num, variance, clip in confs:
+        for n, sample_num, stddev, range in confs:
             points = random_batch_point_cloud(10, n, 10)
             label = random_cls_labels()
 
-            func = du.transform_sampling(sample_num, "random", variance, clip)
+            func = du.transform_sampling(sample_num, "random-gauss", range=range, stddev=stddev)
             points_, label_ = func(points, label)
 
             self.assertArrayEqual(label, label_)
@@ -166,7 +166,7 @@ class DatasetTransformTestCase(PointSynthesisTestCase):
 
             n_ = points.shape[1]
 
-            self.assertTrue(sample_num + int(-sample_num * clip) <= n_ <= n + int(sample_num * clip))
+            self.assertTrue(range[0] <= n_ <= n + range[1])
             self.assertTrue(n_ <= n)
 
             for p, p_ in zip(points, points_):
