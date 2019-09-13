@@ -3,11 +3,6 @@ import tensorflow_core as tf
 import math
 from os import path, makedirs
 import logger
-import itertools
-
-from tensorflow_core.python.keras.losses import LossFunctionWrapper
-from tensorflow_core.python.keras.metrics import MeanMetricWrapper
-import tensorflow_core.python.keras.backend as K
 
 
 def layer_from_config(layer_conf, model_conf, data_conf):
@@ -263,7 +258,7 @@ def train_model(model_config, data_config, model_name, save_root_dir, train_data
     optimizer = optimizer_from_config(lr_schedule, control_conf["optimizer"])
 
     # Get the loss
-    loss = tf.keras.losses.SparseCategoricalCrossentropy()
+    loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
     # Get the metrics
     metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]

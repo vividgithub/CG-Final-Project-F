@@ -210,23 +210,22 @@ def transform_sampling(sample_num, policy="random-gauss", range=None, stddev=Non
                 range[0],
                 range[1]
             ),
-            dtype=tf.int64
+            dtype=tf.int32
         )
 
         # (B, N, F) -> (B, N, index)
         # This method will use the same indices for all the point cloud in the same batch, it won't cause
         # much trouble but it should make sure that the original dataset have shuffled enough
-        # samples = tf.range(n_)  # (N', )
-        # samples = tf.tile(samples[tf.newaxis, ...], (b, 1))  # (B, N')
-        #
-        # batch_indices = tf.range(b, dtype=tf.int64)  # (B, ): [0, 1, 2, ..., b-1]
-        # batch_indices = batch_indices[:, tf.newaxis]  # (B, 1): [[0], [1], [2], ..., [b-1]]
-        # batch_indices = tf.tile(batch_indices, (1, n_))  # (B, N_): [[0, 0, ...], [1, 1, ...], ..., [b-1, b-1, ...]]
-        #
-        # indices = tf.stack([batch_indices, samples], axis=-1)  # (B, N_) ~stack~ (B, N_) = (B, N_, 2)
-        # points_ = tf.gather_nd(points, indices)  # (B, N, F) ~gather_nd~ (B, N_, 2) -> (B, N_, F)
-        # TODO: More good random sampling strategy
-        return points[:, :n_, :], label
+        # Currently, we allow a point to be sampled multiple times
+        samples = tf.random.uniform((b, n_), maxval=n, dtype=tf.int32)  # (B, N')
+
+        batch_indices = tf.range(b, dtype=tf.int32)  # (B, ): [0, 1, 2, ..., b-1]
+        batch_indices = batch_indices[:, tf.newaxis]  # (B, 1): [[0], [1], [2], ..., [b-1]]
+        batch_indices = tf.tile(batch_indices, (1, n_))  # (B, N_): [[0, 0, ...], [1, 1, ...], ..., [b-1, b-1, ...]]
+
+        indices = tf.stack([batch_indices, samples], axis=-1)  # (B, N_) ~stack~ (B, N_) = (B, N_, 2)
+        points_ = tf.gather_nd(points, indices)  # (B, N, F) ~gather_nd~ (B, N_, 2) -> (B, N_, F)
+        return points_, label
 
     if policy == "random-gauss":
         assert range is not None and stddev is not None, "Policy \"random-gauss\" should specify the \"range\" and \"stddev\""
