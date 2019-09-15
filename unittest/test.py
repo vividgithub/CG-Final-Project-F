@@ -163,6 +163,7 @@ class DatasetTransformTestCase(PointSynthesisTestCase):
 
             self.assertTrue(points.shape[0] == points_.shape[0])
             self.assertTrue(points.shape[2] == points_.shape[2])
+            print("points={}, points_{}".format(points.shape, points_.shape))
 
             n_ = points.shape[1]
 
@@ -171,7 +172,9 @@ class DatasetTransformTestCase(PointSynthesisTestCase):
 
             for p, p_ in zip(points, points_):
                 hashes = set([np.sum(x) for x in p])
-                hashes_ = set(np.sum(x_) for x_ in p_)
+                hashes_ = set([np.sum(x_) for x_ in p_])
+                print("hashes.size={}, hashes={}".format(len(hashes), hashes))
+                print("hashes_.size={}, hashes_={}".format(len(hashes_), hashes_))
                 self.assertTrue(hashes.issuperset(hashes_))
 
 

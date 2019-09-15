@@ -188,7 +188,7 @@ class ModelCallback(tf.keras.callbacks.Callback):
         self.log_step = log_step
 
     def on_train_batch_begin(self, batch, logs=None):
-        pass
+        self.model.reset_metrics()
 
     def on_train_batch_end(self, batch, logs=None):
         # Log
@@ -212,12 +212,12 @@ class ModelCallback(tf.keras.callbacks.Callback):
     def on_validation(self, batch, logs):
         logger.log("On batch {}/{}, begin evaluation".format(batch, self.train_step))
 
-        results = self.model.evaluate(self.test_dataset, verbose=0)
-        logger.log("Evaluation result:\n{}".format(batch, self.train_step, results))
-
-        logger.log("Save checkpoint and reset metrics")
-        self.model.save_weights(self.latest_save_path)
-        self.model.reset_metrics()
+        # FIXME:
+        # results = self.model.evaluate(self.test_dataset, verbose=0)
+        # logger.log("Evaluation result:\n{}".format(batch, self.train_step, results))
+        #
+        # logger.log("Save checkpoint and reset metrics")
+        # self.model.save_weights(self.latest_save_path)
 
         # TODO: Save best
 
