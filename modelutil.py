@@ -119,66 +119,11 @@ def net_from_config(model_conf, data_conf):
         assert False, "\"{}\" is currently not supported".format(net_conf["structure"])
 
 
-# def loss_from_config(model_config, data_config):
-#     """
-#     Get the loss from model_config and data_config
-#     :param model_config: The global model configuration
-#     :param data_config: The data configuration
-#     :return: A loss function
-#     """
-#
-#     def sparse_categorical_classification_to_segmentation_cross_entropy(y_true, y_pred, from_logits=False, axis=-1):
-#         # Compare the loss of y_true.shape = (B,) with y_pred.shape = (B, N, C)
-#         return tf.keras.losses.sparse_categorical_crossentropy(
-#             y_true=K.tile(y_true, (1, tf.shape(y_pred)[1])),
-#             y_pred=y_pred,
-#             from_logits=from_logits,
-#             axis=axis
-#         )
-#
-#     # Normally this function will return SparseCategoricalCrossentropy except that we use
-#     # a classification dataset but the network's last layer is "output-segmentation", which
-#     # indicates that the dataset shape is (B, ) but the output shape is (B, N, C). So we have
-#     # to use a special loss function to such case
-#     if data_config["task"] == "classification" and model_config["net"]["layers"][-1]["name"] == "output-segmentation":
-#         return SparseCategoricalClassificationToSegmentationCrossEntropy()
-#     else:
-#         return tf.keras.losses.SparseCategoricalCrossentropy()
-#
-#
-# def metrics_from_config(model_config, data_config):
-#     """
-#     Get the corresponding default metrics from model configuration and data configuration
-#     :param model_config: The global model configuration
-#     :param data_config: The dataset configuration
-#     :return: A group of metrics
-#     """
-#     def sparse_categorical_classification_to_segmentation_accuracy(y_true, y_pred):
-#         # Compare the loss of y_true.shape = (B, 1) with y_pred.shape = (B, N, C)
-#
-#         # Normally, when we don't specify the target_tensors in "model.compile", keras will assume
-#         # that the y_true has the same dimension shape of y_pred, if this case, it is (None, None, None).
-#         # So in order to replicate the y_true for N times, we need to first flatten it to a 1D-tensor and
-#         # then tile it with N.
-#         y_true = tf.reshape(y_true, (-1, ))  # (None, None, None) -> (None, )
-#         y_true = tf.tile(y_true, (tf.shape(y_pred)[1], ))  # (None, ) -> (None, )
-#         y_true = tf.reshape(y_true, (tf.shape(y_pred)[0], -1))  # (None, ) -> (None, None)
-#
-#         return tf.keras.metrics.sparse_categorical_accuracy(y_true, y_pred)
-#
-#     # Same as "sparse_categorical_classification_to_segmentation_cross_entropy", when a classification dataset
-#     # is used but the network's last layer is "output-segmentation" (which implies the shape is (B, N, F)), we
-#     # have to define a new metrics for classification for label input (B,)
-#     if data_config["task"] == "classification" and model_config["net"]["layers"][-1]["name"] == "output-segmentation":
-#         return [MeanMetricWrapper(sparse_categorical_classification_to_segmentation_accuracy)]
-#     else:
-#         return [tf.keras.metrics.SparseCategoricalAccuracy()]
-
-
 class ModelCallback(tf.keras.callbacks.Callback):
 
-    def __init__(self, train_step, validation_step, test_dataset, batch_size, save_dir, log_step=None):
+    def __init__(self, train_step, validation_step, train_dataset, test_dataset, batch_size, save_dir, log_step=None):
         self.validation_step = validation_step
+        self.train_dataset = train_dataset
         self.test_dataset = test_dataset
         self.batch_size = batch_size
         self.train_step = train_step
@@ -210,14 +155,18 @@ class ModelCallback(tf.keras.callbacks.Callback):
         pass
 
     def on_validation(self, batch, logs):
+        logger.log("", prefix=False)  # Print an empty line
         logger.log("On batch {}/{}, begin evaluation".format(batch, self.train_step))
 
-        # FIXME:
-        # results = self.model.evaluate(self.test_dataset, verbose=0)
-        # logger.log("Evaluation result:\n{}".format(batch, self.train_step, results))
-        #
-        # logger.log("Save checkpoint and reset metrics")
-        # self.model.save_weights(self.latest_save_path)
+        results = self.model.evaluate(self.test_dataset, verbose=0)
+        logger.log("Evaluation result {}/{}:  results={}".format(
+            batch,
+            self.train_step,
+            { name: result for name, result in zip(self.model.metrics_names, results) }
+        ))
+
+        logger.log("Save checkpoint")
+        self.model.save_weights(self.latest_save_path)
 
         # TODO: Save best
 
@@ -294,7 +243,7 @@ def train_model(model_config, data_config, model_name, save_root_dir, train_data
 
     # Get the callback
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=save_dir, update_freq=tensorboard_sync_step)
-    model_callback = ModelCallback(train_step, validation_step, test_dataset, batch_size, save_dir)
+    model_callback = ModelCallback(train_step, validation_step, train_dataset, test_dataset, batch_size, save_dir)
 
     logger.log("Compile network, loss={}, metrics={}".format(loss, metrics))
     net.compile(optimizer, loss=loss, metrics=metrics)
