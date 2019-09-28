@@ -12,3 +12,5 @@ Currently under development
 single configuration file: `modelutil.net_from_conf` (not yet completed)
 - 2019.09.10 `Jianwei Jiang`: Add function to create and train network from configuration
 - 2019.09.11 - 2019.09.13 `Jianwei Jiang`: Make the PointCNN works in Keras 🌙 
+- 2019.09.19 `Jianwei Jiang`: Reset a few days, add evaluation and lastest checkpoint in callback
+- 2019.09.28 `Jianwei Jiang`: Add save best pattern and beautify ouptut

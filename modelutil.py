@@ -121,7 +121,7 @@ def net_from_config(model_conf, data_conf):
 
 class ModelCallback(tf.keras.callbacks.Callback):
 
-    def __init__(self, train_step, validation_step, train_dataset, test_dataset, batch_size, save_dir, log_step=None):
+    def __init__(self, train_step, validation_step, train_dataset, test_dataset, batch_size, save_dir, log_step=1):
         self.validation_step = validation_step
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
@@ -130,7 +130,10 @@ class ModelCallback(tf.keras.callbacks.Callback):
         self.save_dir = save_dir
         self.latest_save_path = path.join(save_dir, "latest_save.h5")
         self.best_save_path = path.join(save_dir, "best_save.h5")
+        self.info_save_path = path.join(save_dir, "info.txt")
         self.log_step = log_step
+
+        self.best_results = None
 
     def on_train_batch_begin(self, batch, logs=None):
         self.model.reset_metrics()
@@ -138,7 +141,7 @@ class ModelCallback(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, batch, logs=None):
         # Log
         if self.log_step and batch % self.log_step == 0:
-            logger.log("On batch {}/{}, loss={}".format(batch, self.train_step, logs["loss"]))
+            self.on_logging(batch, logs)
 
         # Validation
         if self.validation_step is not None and batch > 0 and batch % self.validation_step == 0:
@@ -154,23 +157,44 @@ class ModelCallback(tf.keras.callbacks.Callback):
     def on_test_batch_end(self, batch, logs=None):
         pass
 
+    def on_logging(self, batch, logs):
+        results_output = ", ".join(["{}:{}".format(key, value) for key, value in logs.items()])
+        logger.log("On batch {}/{}, results:{{{}}}".format(batch, self.train_step, results_output))
+
     def on_validation(self, batch, logs):
-        logger.log("", prefix=False)  # Print an empty line
-        logger.log("On batch {}/{}, begin evaluation".format(batch, self.train_step))
+        logger.log("On batch {}/{}, BEGIN EVALUATION".format(batch, self.train_step), color="blue")
 
-        results = self.model.evaluate(self.test_dataset, verbose=0)
-        logger.log("Evaluation result {}/{}:  results={}".format(
-            batch,
-            self.train_step,
-            { name: result for name, result in zip(self.model.metrics_names, results) }
-        ))
+        # Get the validation results
+        metrics_values = self.model.evaluate(self.test_dataset, verbose=0)
+        results = {name: value for name, value in zip(self.model.metrics_names, metrics_values)}
+        results_output = ", ".join(["{}:{}".format(name, value) for name, value in results.items()])
+        logger.log(results_output, prefix=False)
+        logger.log("Evaluating validation dataset results: {{{}}}".format(results_output), prefix=False, color="blue")
 
-        logger.log("Save checkpoint")
+        # Update the best results, we assume that we have a accuracy metrics in it
+        best_accuracy = 0.0 if self.best_results is None else self.best_results["accuracy"]
+        accuracy = results["accuracy"]
+        if self.best_results is None or best_accuracy < accuracy:
+            logger.log("Best accuracy update: {} --> {}".format(best_accuracy, accuracy), prefix=False, color="green")
+            self.best_results = results
+            # Save the best checkpoint
+            logger.log("Save best checkpoint to \"{}\"".format(self.best_save_path), prefix=False, color="green")
+            self.model.save_weights(self.best_save_path)
+
+        # Save the latest checkpoint
+        logger.log("Save latest checkpoint to \"{}\"".format(self.latest_save_path), prefix=False, color="yellow")
         self.model.save_weights(self.latest_save_path)
 
-        # TODO: Save best
+        # Save info log
+        logger.log("Save info to \"{}\"".format(self.info_save_path), prefix=False)
+        with open(self.info_save_path, "w") as fout:
+            infos = {"step": batch}
+            # Add the last results to it
+            infos.update({("last_" + key): value for key, value in results.items()})
+            # Add the best results to it
+            infos.update({("best_" + key): value for key, value in self.best_results.items()})
 
-        logger.log("On batch {}/{}, end evaluation".format(batch, self.train_step))
+        logger.log("On batch {}/{}, END EVALUATION".format(batch, self.train_step), color="blue")
 
     def on_stop(self, batch, logs):
         logger.log("On batch {}/{}, stop".format(batch, self.train_step))
@@ -179,6 +203,7 @@ class ModelCallback(tf.keras.callbacks.Callback):
 
 
 def train_model(model_config, data_config, model_name, save_root_dir, train_dataset, test_dataset):
+    # TODO: Add mode
     control_conf = model_config["control"]
 
     # Transform the dataset is the dataset is classification dataset and
@@ -207,10 +232,14 @@ def train_model(model_config, data_config, model_name, save_root_dir, train_data
     optimizer = optimizer_from_config(lr_schedule, control_conf["optimizer"])
 
     # Get the loss
-    loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+    loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, name="Loss")
 
     # Get the metrics
-    metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]
+    # We add a logits loss in the metrics since the total loss will have regularization term
+    metrics = [
+        tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
+        tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True, name="logits-loss")
+    ]
 
     # Get the batch size
     batch_size = control_conf["batch_size"]
@@ -254,7 +283,7 @@ def train_model(model_config, data_config, model_name, save_root_dir, train_data
     logger.log("Begin training")
     net.fit(
         train_dataset,
-        verbose=1,
+        verbose=0,
         steps_per_epoch=train_step,
         callbacks=[tensorboard_callback, model_callback],
         shuffle=False  # We do the shuffle ourself
