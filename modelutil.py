@@ -3,6 +3,7 @@ import tensorflow_core as tf
 import math
 from os import path, makedirs
 import logger
+from kerasutil import ModelCallback
 
 
 def layer_from_config(layer_conf, model_conf, data_conf):
@@ -119,172 +120,114 @@ def net_from_config(model_conf, data_conf):
         assert False, "\"{}\" is currently not supported".format(net_conf["structure"])
 
 
-class ModelCallback(tf.keras.callbacks.Callback):
+class ModelRunner:
+    """
+    A class to run a specified model on a specified dataset
+    """
 
-    def __init__(self, train_step, validation_step, train_dataset, test_dataset, batch_size, save_dir, log_step=1):
-        self.validation_step = validation_step
+    def __init__(self, model_conf, data_conf, name, save_root_dir, train_dataset, test_dataset):
+        """
+        Initialize a model runner
+        :param model_conf: The pyconf for model
+        :param data_conf: The pyconf for dataset
+        :param name: The name for model
+        :param save_root_dir: The root for saving. Normally it is the root directory where all the models of a specified
+        dataset should be saved. Like something "path/ModelNet40-2048". Note that it is not the "root directory of the
+        model", such as "path/ModelNet40-2048/PointCNN-X3-L4".
+        :param train_dataset: The dataset to train the model
+        :param test_dataset: The dataset to test the model
+        """
+        self.model_conf = model_conf
+        self.data_conf = data_conf
+        self.name = name
+        self.save_root_dir = save_root_dir
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
-        self.batch_size = batch_size
-        self.train_step = train_step
-        self.save_dir = save_dir
-        self.latest_save_path = path.join(save_dir, "latest_save.h5")
-        self.best_save_path = path.join(save_dir, "best_save.h5")
-        self.info_save_path = path.join(save_dir, "info.txt")
-        self.log_step = log_step
 
-        self.best_results = None
+    def train(self):
+        # TODO: Add mode
+        control_conf = self.model_conf["control"]
 
-    def on_train_batch_begin(self, batch, logs=None):
-        self.model.reset_metrics()
+        # Transform the dataset is the dataset is classification dataset and
+        # the model_conf's last output layer is output-segmentation
+        if self.data_conf["task"] == "classification" and self.model_conf["net"]["layers"][-1][
+            "name"] == "output-segmentation":
+            layer_conf = self.model_conf["net"]["layers"][-1]
+            assert "output_size" in layer_conf, "The dataset is classification dataset " \
+                                                "while the model configuration is segmentation. " \
+                                                "Cannot find \"output_size\" to transform the " \
+                                                "classification dataset to segmentation task"
+            seg_output_size = layer_conf["output_size"]
+            # Transform function convert the label with (B, 1) to (B, N) where N is the last layer's point output size
+            transform_func = (lambda points, label: (points, tf.tile(label, (1, seg_output_size))))
+            train_dataset = self.train_dataset.map(transform_func)
+            test_dataset = self.test_dataset.map(transform_func)
+            logger.log("Convert classification to segmentation task with output_size={}".format(seg_output_size))
 
-    def on_train_batch_end(self, batch, logs=None):
-        # Log
-        if self.log_step and batch % self.log_step == 0:
-            self.on_logging(batch, logs)
+        # Get the network
+        logger.log("Creating network, train_dataset={}, test_dataset={}".format(self.train_dataset, self.test_dataset))
+        net = net_from_config(self.model_conf, self.data_conf)
 
-        # Validation
-        if self.validation_step is not None and batch > 0 and batch % self.validation_step == 0:
-            self.on_validation(batch, logs)
+        # Get the learning_rate and optimizer
+        logger.log("Creating learning rate schedule")
+        lr_schedule = learning_rate_from_config(control_conf["learning_rate"])
+        logger.log("Creating optimizer")
+        optimizer = optimizer_from_config(lr_schedule, control_conf["optimizer"])
 
-        # Stopping
-        if batch > 0 and batch >= self.train_step:
-            self.on_stop(batch, logs)
+        # Get the loss
+        loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, name="Loss")
 
-    def on_test_batch_begin(self, batch, logs=None):
-        pass
+        # Get the metrics
+        # We add a logits loss in the metrics since the total loss will have regularization term
+        metrics = [
+            tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
+            tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True, name="logits_loss")
+        ]
 
-    def on_test_batch_end(self, batch, logs=None):
-        pass
+        # Get the batch size
+        batch_size = control_conf["batch_size"]
 
-    def on_logging(self, batch, logs):
-        results_output = ", ".join(["{}:{}".format(key, value) for key, value in logs.items()])
-        logger.log("On batch {}/{}, results:{{{}}}".format(batch, self.train_step, results_output))
+        # Get the total step for training
+        if "train_epoch" in control_conf:
+            train_step = int(math.ceil(control_conf["train_epoch"] * self.data_conf["train"]["size"] / batch_size))
+        elif "train_step" in control_conf:
+            train_step = control_conf["train_step"]
+        else:
+            assert False, "Do not set the \"train_step\" or \"train_epoch\" in model configuraiton"
 
-    def on_validation(self, batch, logs):
-        logger.log("On batch {}/{}, BEGIN EVALUATION".format(batch, self.train_step), color="blue")
+        # Get the validation step
+        validation_step = control_conf.get("validation_step", None)
+        tensorboard_sync_step = control_conf.get("tensorboard_sync_step", None) or validation_step or 100
 
-        # Get the validation results
-        metrics_values = self.model.evaluate(self.test_dataset, verbose=0)
-        results = {name: value for name, value in zip(self.model.metrics_names, metrics_values)}
-        results_output = ", ".join(["{}:{}".format(name, value) for name, value in results.items()])
-        logger.log(results_output, prefix=False)
-        logger.log("Evaluating validation dataset results: {{{}}}".format(results_output), prefix=False, color="blue")
+        logger.log("Training conf: batch_size={}, train_step={}, validation_step={}, "
+                   "tensorboard_sync_step={}".format(batch_size, train_step, validation_step, tensorboard_sync_step))
 
-        # Update the best results, we assume that we have a accuracy metrics in it
-        best_accuracy = 0.0 if self.best_results is None else self.best_results["accuracy"]
-        accuracy = results["accuracy"]
-        if self.best_results is None or best_accuracy < accuracy:
-            logger.log("Best accuracy update: {} --> {}".format(best_accuracy, accuracy), prefix=False, color="green")
-            self.best_results = results
-            # Save the best checkpoint
-            logger.log("Save best checkpoint to \"{}\"".format(self.best_save_path), prefix=False, color="green")
-            self.model.save_weights(self.best_save_path)
+        # Get the save directory
+        suffix = 0
+        while True:
+            model_name_with_suffix = self.name + ("-" + str(suffix) if suffix > 0 else "")
+            save_dir = path.join(self.save_root_dir, model_name_with_suffix)
+            if not path.exists(save_dir):
+                break
+            suffix += 1
+        makedirs(save_dir, exist_ok=False)
+        logger.log("Save in directory: \"{}\"".format(save_dir))
 
-        # Save the latest checkpoint
-        logger.log("Save latest checkpoint to \"{}\"".format(self.latest_save_path), prefix=False, color="yellow")
-        self.model.save_weights(self.latest_save_path)
+        # Get the callback
+        tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=save_dir, update_freq=tensorboard_sync_step)
+        model_callback = ModelCallback(train_step, validation_step, train_dataset, test_dataset, batch_size, save_dir)
 
-        # Save info log
-        logger.log("Save info to \"{}\"".format(self.info_save_path), prefix=False)
-        with open(self.info_save_path, "w") as fout:
-            infos = {"step": batch}
-            # Add the last results to it
-            infos.update({("last_" + key): value for key, value in results.items()})
-            # Add the best results to it
-            infos.update({("best_" + key): value for key, value in self.best_results.items()})
+        logger.log("Compile network, loss={}, metrics={}".format(loss, metrics))
+        net.compile(optimizer, loss=loss, metrics=metrics)
 
-        logger.log("On batch {}/{}, END EVALUATION".format(batch, self.train_step), color="blue")
+        logger.log("Summary of the network:")
+        net.summary(print_fn=lambda x: logger.log(x, prefix=False))
 
-    def on_stop(self, batch, logs):
-        logger.log("On batch {}/{}, stop".format(batch, self.train_step))
-        logger.log("Save checkpoint and exit")
-        self.model.save_weights(self.latest_save_path)
-
-
-def train_model(model_config, data_config, model_name, save_root_dir, train_dataset, test_dataset):
-    # TODO: Add mode
-    control_conf = model_config["control"]
-
-    # Transform the dataset is the dataset is classification dataset and
-    # the model_conf's last output layer is output-segmentation
-    if data_config["task"] == "classification" and model_config["net"]["layers"][-1]["name"] == "output-segmentation":
-        layer_conf = model_config["net"]["layers"][-1]
-        assert "output_size" in layer_conf, "The dataset is classification dataset " \
-                                            "while the model configuration is segmentation. " \
-                                            "Cannot find \"output_size\" to transform the " \
-                                            "classification dataset to segmentation task"
-        seg_output_size = layer_conf["output_size"]
-        # Transform function convert the label with (B, 1) to (B, N) where N is the last layer's point output size
-        transform_func = (lambda points, label: (points, tf.tile(label, (1, seg_output_size))))
-        train_dataset = train_dataset.map(transform_func)
-        test_dataset = test_dataset.map(transform_func)
-        logger.log("Convert classification to segmentation task with output_size={}".format(seg_output_size))
-
-    # Get the network
-    logger.log("Creating network, train_dataset={}, test_dataset={}".format(train_dataset, test_dataset))
-    net = net_from_config(model_config, data_config)
-
-    # Get the learning_rate and optimizer
-    logger.log("Creating learning rate schedule")
-    lr_schedule = learning_rate_from_config(control_conf["learning_rate"])
-    logger.log("Creating optimizer")
-    optimizer = optimizer_from_config(lr_schedule, control_conf["optimizer"])
-
-    # Get the loss
-    loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, name="Loss")
-
-    # Get the metrics
-    # We add a logits loss in the metrics since the total loss will have regularization term
-    metrics = [
-        tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
-        tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True, name="logits-loss")
-    ]
-
-    # Get the batch size
-    batch_size = control_conf["batch_size"]
-
-    # Get the total step for training
-    if "train_epoch" in control_conf:
-        train_step = int(math.ceil(control_conf["train_epoch"] * data_config["train"]["size"] / batch_size))
-    elif "train_step" in control_conf:
-        train_step = control_conf["train_step"]
-    else:
-        assert False, "Do not set the \"train_step\" or \"train_epoch\" in model configuraiton"
-
-    # Get the validation step
-    validation_step = control_conf.get("validation_step", None)
-    tensorboard_sync_step = control_conf.get("tensorboard_sync_step", None) or validation_step or 100
-
-    logger.log("Training conf: batch_size={}, train_step={}, validation_step={}, "
-               "tensorboard_sync_step={}".format(batch_size, train_step, validation_step, tensorboard_sync_step))
-
-    # Get the save directory
-    suffix = 0
-    while True:
-        model_name_with_suffix = model_name + ("-" + str(suffix) if suffix > 0 else "")
-        save_dir = path.join(save_root_dir, model_name_with_suffix)
-        if not path.exists(save_dir):
-            break
-        suffix += 1
-    makedirs(save_dir, exist_ok=False)
-    logger.log("Save in directory: \"{}\"".format(save_dir))
-
-    # Get the callback
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=save_dir, update_freq=tensorboard_sync_step)
-    model_callback = ModelCallback(train_step, validation_step, train_dataset, test_dataset, batch_size, save_dir)
-
-    logger.log("Compile network, loss={}, metrics={}".format(loss, metrics))
-    net.compile(optimizer, loss=loss, metrics=metrics)
-
-    logger.log("Summary of the network:")
-    net.summary(print_fn=lambda x: logger.log(x, prefix=False))
-
-    logger.log("Begin training")
-    net.fit(
-        train_dataset,
-        verbose=0,
-        steps_per_epoch=train_step,
-        callbacks=[tensorboard_callback, model_callback],
-        shuffle=False  # We do the shuffle ourself
-    )
+        logger.log("Begin training")
+        net.fit(
+            train_dataset,
+            verbose=0,
+            steps_per_epoch=train_step,
+            callbacks=[tensorboard_callback, model_callback],
+            shuffle=False  # We do the shuffle ourself
+        )
