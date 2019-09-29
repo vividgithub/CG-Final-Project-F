@@ -100,3 +100,38 @@ class ModelCallback(tf.keras.callbacks.Callback):
         logger.log("On batch {}/{}, stop".format(batch, self.train_step))
         logger.log("Save checkpoint and exit")
         self.model.save_weights(self.latest_save_path)
+
+
+class ExponentialBiasedDecay(tf.keras.optimizers.schedules.ExponentialDecay):
+    """The exponential decay learning rate schedule with a bias offset"""
+
+    def __init__(self, offset, initial_learning_rate, decay_steps, decay_rate, staircase=False, name=None):
+        """
+        By default the original exponential learning rate schedule uses the decayed learning rate
+        "initial_learning_rate * decay_rate ^ (step / decay_steps)", we add an offset to the "step", which is:
+        "initial_learning_rate * decay_rate ^ ((step + offset) / decay_steps)". Such biased decay is useful
+        when you want to resume a task with step 0 while the original training process has already iterated
+        "offset" times. In this case, you simply use this class as a replacement to the original exponential
+        learning schedule and it works well
+        :param offset: The step offset
+        :param initial_learning_rate: A scalar `float32` or `float64` `Tensor` or a Python number.
+        The initial learning rate.
+        :param decay_steps: A scalar `int32` or `int64` `Tensor` or a Python number. Must be positive.
+        See the decay computation above.
+        :param decay_rate:  A scalar `float32` or `float64` `Tensor` or a Python number.
+        The decay rate.
+        :param staircase: If `True` decay the learning rate at discrete intervals
+        :param name: Optional name of the operation.  Defaults to 'ExponentialDecay'.
+        """
+        super(ExponentialBiasedDecay, self).__init__(
+            offset=offset,
+            initial_learning_rate=initial_learning_rate,
+            decay_steps=decay_steps,
+            decay_rate=decay_rate,
+            staircase=staircase,
+            name=name
+        )
+        self._offset = offset
+
+    def __call__(self, step):
+        super(ExponentialBiasedDecay, self).__call__(self, step + self._offset)
