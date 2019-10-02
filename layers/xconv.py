@@ -1,6 +1,5 @@
 import tensorflow as tf
 import legacy.pointfly as pf
-from computil import ComputationContext
 
 
 class XConvLayerCoreV1(tf.keras.layers.Layer):
@@ -36,7 +35,7 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         self.with_global = with_global
         self.sub_layers = dict()
 
-    def batch_normalization(self, inputs, training, name):
+    def batch_normalization(self, inputs, name, training):
         layer = self.sub_layers.get(name)
         if not layer:
             layer = tf.keras.layers.BatchNormalization(momentum=0.99, name=name)
@@ -83,6 +82,9 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         x = layer(inputs, training=training)
         x = self.batch_normalization(x, training=training, name=name + "-BN")
         return x
+
+    def count_params(self):
+        return sum([layer.count_params() for layer in self.sub_layers.values()])
 
     def call(self, inputs, training, **kwargs):
         is_training = training
@@ -150,47 +152,3 @@ class XConvLayer(XConvLayerCoreV1):
     """
     def __init__(self, *args, **kwargs):
         super(XConvLayer, self).__init__(-1, *args, **kwargs)
-
-
-class FeatureReshapeLayer(tf.keras.layers.Layer):
-    """
-    A feature resize layer that reshape the feature dimension using several dense layer with dropout
-    """
-    def __init__(self, channels, dropout, **kwargs):
-        super(FeatureReshapeLayer, self).__init__()
-
-        self.channels = channels
-        self.dropout = dropout
-        self.layers = []
-
-        for channel_size, dropout_rate in zip(channels, dropout):
-            self.layers.append(tf.keras.layers.Dense(channel_size, activation="elu"))
-            self.layers.append(tf.keras.layers.BatchNormalization())
-            if dropout_rate > 0.0:
-                self.layers.append(tf.keras.layers.Dropout(dropout_rate))
-
-    def call(self, inputs, *args, **kwargs):
-        c = ComputationContext(*args, **kwargs)
-        p = inputs[:, :, :3]  # (B, N, 3)
-        f = inputs[:, :, 3:]  # (B, N, F)
-
-        f_ = c(self.layers, f)  # (B, N, F) -> (B, N, self.channels[-1])
-
-        return tf.concat([p, f_], axis=-1)
-
-
-def layer_from_config(layer_conf):
-    """
-    Create a layer from configuration
-    :param conf: The configuration dict, where it should have an "name" entry specified the name of
-    the layer and other parameter to initialize the layer
-    :return: A corresponding keras layer
-    """
-    layer_map = {
-        "conv-xconv": XConvLayer,
-        "pooling-xconv": XConvPoolingLayer,
-        "feature-reshape": FeatureReshapeLayer
-    }
-
-    assert layer_conf["name"] in layer_map, "Did not find layer with name \"{}\"".format(layer_conf["name"])
-    return layer_map[layer_conf["name"]](**layer_conf)
