@@ -93,6 +93,7 @@ class ModelCallback(tf.keras.callbacks.Callback):
             infos.update({("last_" + key): value for key, value in results.items()})
             # Add the best results to it
             infos.update({("best_" + key): value for key, value in self.best_results.items()})
+            fout.write("\n".join(["{} = {}".format(k, v) for k, v in infos.items()]))  # Write the result
 
         logger.log("On batch {}/{}, END EVALUATION".format(batch, self.train_step), color="blue")
 

@@ -43,20 +43,20 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
             self.sub_layers[name] = layer
         return layer(inputs, training=training)
 
-    def dense(self, inputs, units, name, training):
+    def dense(self, inputs, units, name, training, activation="elu"):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.Dense(units, use_bias=False, name=name)
+            layer = tf.keras.layers.Dense(units, use_bias=False, activation=activation, name=name)
             self.sub_layers[name] = layer
 
         x = layer(inputs, training=training)
         x = self.batch_normalization(x, training=training, name=name+"-BN")
         return x
 
-    def conv2d(self, inputs, channel, name, training, kernel_size):
+    def conv2d(self, inputs, channel, name, training, kernel_size, activation="elu"):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.Conv2D(channel, kernel_size, use_bias=False, activation="elu", strides=(1, 1), padding='VALID', name=name)
+            layer = tf.keras.layers.Conv2D(channel, kernel_size, use_bias=False, activation=activation, strides=(1, 1), padding='VALID', name=name)
             self.sub_layers[name] = layer
 
         x = layer(inputs, training=training)
@@ -73,11 +73,11 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         x = self.batch_normalization(x, training=training, name=name + "-BN")
         return x
 
-    def separable_conv2d(self, inputs, channel, name, training, kernel_size, depth_multiplier):
+    def separable_conv2d(self, inputs, channel, name, training, kernel_size, depth_multiplier, activation="elu"):
         layer = self.sub_layers.get(name)
         if not layer:
             layer = tf.keras.layers.SeparableConv2D(channel, kernel_size, use_bias=False, depth_multiplier=depth_multiplier,
-                                                    activation="elu", strides=(1, 1), padding='VALID', name=name)
+                                                    activation=activation, strides=(1, 1), padding='VALID', name=name)
             self.sub_layers[name] = layer
 
         x = layer(inputs, training=training)
@@ -85,7 +85,6 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         return x
 
     def call(self, inputs, training, **kwargs):
-
         is_training = training
         K = self.k
         D = self.d
@@ -165,10 +164,10 @@ class FeatureReshapeLayer(tf.keras.layers.Layer):
         self.layers = []
 
         for channel_size, dropout_rate in zip(channels, dropout):
-            self.layers.append(tf.keras.layers.Dense(channel_size))
+            self.layers.append(tf.keras.layers.Dense(channel_size, activation="elu"))
+            self.layers.append(tf.keras.layers.BatchNormalization())
             if dropout_rate > 0.0:
                 self.layers.append(tf.keras.layers.Dropout(dropout_rate))
-            self.layers.append(tf.keras.layers.BatchNormalization())
 
     def call(self, inputs, *args, **kwargs):
         c = ComputationContext(*args, **kwargs)
