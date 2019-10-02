@@ -19,6 +19,8 @@ def layer_from_config(layer_conf, model_conf, data_conf):
 
     if name == "output-classification" or name == "output-segmentation":
         return tf.keras.layers.Dense(data_conf["class_count"])
+    elif name == "output-conditional-segmentation":
+        return layers.OutputConditionalSegmentationLayer(data_conf["class_count"])
     else:
         return layers.layer_from_config(layer_conf)
 
@@ -149,9 +151,9 @@ class ModelRunner:
         control_conf = self.model_conf["control"]
 
         # Transform the dataset is the dataset is classification dataset and
-        # the model_conf's last output layer is output-segmentation
-        if self.data_conf["task"] == "classification" and self.model_conf["net"]["layers"][-1][
-            "name"] == "output-segmentation":
+        # the model_conf's last output layer is output-conditional-segmentation
+        if self.data_conf["task"] == "classification" and \
+                self.model_conf["net"]["layers"][-1]["name"] == "output-conditional-segmentation":
             layer_conf = self.model_conf["net"]["layers"][-1]
             assert "output_size" in layer_conf, "The dataset is classification dataset " \
                                                 "while the model configuration is segmentation. " \
@@ -161,7 +163,7 @@ class ModelRunner:
             # Transform function convert the label with (B, 1) to (B, N) where N is the last layer's point output size
             transform_func = (lambda points, label: (points, tf.tile(label, (1, seg_output_size))))
             train_dataset = self.train_dataset.map(transform_func)
-            test_dataset = self.test_dataset.map(transform_func)
+            test_dataset = self.test_dataset
             logger.log("Convert classification to segmentation task with output_size={}".format(seg_output_size))
 
         # Get the network
