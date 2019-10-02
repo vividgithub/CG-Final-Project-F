@@ -11,7 +11,7 @@ def pyconf(filepath):
     with open(filepath) as f:
         conf = eval(f.read())
 
-    # Resolve reference link
+    # Resolve reference link and evaluation parameter
     def ref_link(c, g):
         if type(c) is str and c.startswith("@"):  # Reference link, something link "@dataset/name"
             ref_path = c.strip()[1:].split("/")
@@ -20,6 +20,8 @@ def pyconf(filepath):
                 # We only support the indexing of dictionary and list (including tuple)
                 c = g[ref] if type(g) is dict else g[int(ref)]
             return c
+        elif type(c) is str and c.startswith("$"):  # Evaluation parameter
+            return eval(c[1:])
         elif type(c) is dict:  # Dictionary
             return {k: ref_link(v, g) for k, v in c.items()}
         elif type(c) is list or type(c) is tuple:  # List or tuple
