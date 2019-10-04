@@ -1,11 +1,8 @@
 from unittest import TestCase, main
-import pointsynthesis.datasetutil as du
-import tensorflow as tf
-import transforms3d
+import utils.datasetutil as du
 import random
 import numpy as np
 import math
-import pdb
 
 
 def random_point_cloud(n, f=3):

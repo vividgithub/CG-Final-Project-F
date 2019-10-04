@@ -3,7 +3,7 @@ import tensorflow_core as tf
 import math
 from os import path, makedirs
 import logger
-from kerasutil import ModelCallback
+from utils.kerasutil import ModelCallback
 
 
 def layer_from_config(layer_conf, model_conf, data_conf):

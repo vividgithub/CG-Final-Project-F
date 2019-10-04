@@ -1,9 +1,8 @@
 import tensorflow as tf
-from os import path, listdir
+from os import path
 import h5py
 from logger import log
-import ioutil
-import numpy as np
+from utils import ioutil
 
 
 def apply_transforms(dataset, confs, batch_size):
