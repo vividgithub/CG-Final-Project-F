@@ -321,6 +321,7 @@ def kpconv_ops(query_points,
                support_points,
                neighbors_indices,
                features,
+               n_kp,
                K_points,
                K_values,
                KP_extent,
@@ -333,7 +334,8 @@ def kpconv_ops(query_points,
     :param query_points:        [n_points, dim]
     :param support_points:      [n0_points, dim]
     :param neighbors_indices:   [n_points, n_neighbors]
-    :param features:            [n_points, in_fdim]
+    :param features:            [n0_points, in_fdim]
+    :param n_kp:                int
     :param K_points:            [n_kpoints, dim]
     :param K_values:            [n_kpoints, in_fdim, out_fdim]
     :param KP_extent:           float32

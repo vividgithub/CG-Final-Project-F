@@ -45,44 +45,43 @@ class KPConvLayer(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, *args, **kwargs):
-        # points: (B, N, 3)
-        # features: (B, N, F)
-        # ouput_points: (B, N', 3)
-        # neighbor_indices: (B, N', #neighbor)
-        # output: (B, N', channel)
+        # points: (N, 3)
+        # features: (N, F)
+        # ouput_points: (N', 3)
+        # neighbor_indices: (N', (neighbor)), should be global indices
+        # output: (N', channel)
         points, features, output_points, neighbor_indices = inputs
 
-        b = tf.shape(points)[0]
-
-        # Squeeze the batch
-        neighbors = tf.gather(points, neighbor_indices, batch_dims=1)  # (B, N', #neighbor, 3)
-        neighbors = neighbors - tf.expand_dims(output_points, axis=2)  # (B, N', #neighbor, 3), centering
+        neighbors = tf.gather(tf.concat([points, features], axis=-1), neighbor_indices)  # (N', (neighbor), F + 3)
 
         # Get all difference matrices
-        neighbors = tf.expand_dims(neighbors, axis=3)  # (B, N', #neighbor, 1, 3)
-        neighbors = tf.tile(neighbors, [1, 1, 1, self.k, 1])  # (B, N', #neighbor, k, 3)
-        differences = neighbors - self.k_points  # (B, N', #neighbor, k, 3)
+        neighbors = tf.expand_dims(neighbors, axis=2)  # (N', (neighbor), 1, F + 3)
+        neighbors = tf.tile(neighbors, [1, 1, self.k, 1])  # (N', (neighbor), k, F + 3)
+
+        # Unpack the position and features
+        # neighbors: (N', (neighbor), k, 3)
+        # neighbor_features: (N', (neighbor), k, F)
+        neighbors, neighbor_features = neighbors[..., :3], neighbors[..., 3:]
+
+        # differences: (N', (neighbor), k, 3)
+        differences = neighbors - output_points[..., tf.newaxis, tf.newaxis, :]  # Convert global to relative positions
+        differences = differences - self.k_points  # Convert the positions relative to the kernel points
 
         # Get the square distances
-        sq_distances = tf.reduce_sum(tf.square(differences), axis=-1)  # (B, N', #neighbor, k)
+        sq_distances = tf.reduce_sum(tf.square(differences), axis=-1)  # (N', (neighbor), k)
 
         # Get Kernel point influences
         assert self.influence == "linear", \
-            "KP convolution only support linear influence, get \"{}\"".format(self.influence)
-        all_weights = tf.maximum(1 - tf.sqrt(sq_distances) / self.extent, 0.0)  # (B, N', #neighbor, k)
-        all_weights = tf.transpose(all_weights, [0, 1, 3, 2])  # (B, N', k, #neighbor)
+            f"KP convolution only support linear influence, get \"{self.influence}\""
+        all_weights = tf.maximum(1 - tf.sqrt(sq_distances) / self.extent, 0.0)  # (N', (neighbor), k)
+        all_weights = tf.expand_dims(all_weights, axis=-1)  # (N', (neighbor), k, 1)
 
-        # Aggregation
-        neighbor_features = tf.gather(features, neighbor_indices, batch_dims=1)  # (B, N', #neighbor, F)
-        weighted_features = tf.matmul(all_weights, neighbor_features)  # (B, N', k, F)
+        weighted_features = all_weights * neighbor_features  # (N', (neighbor), k, F)
+        weighted_features = tf.reduce_sum(weighted_features, axis=1)  # (N', k, F)
 
         # Apply network weights
-        weighted_features = tf.transpose(weighted_features, [1, 2, 0, 3])  # (k, B, N', F)
-        k_values = self.k_values  # (k, F, channel)
-        k_values = tf.expand_dims(k_values, axis=1)  # (k, 1, F, channel)
-        k_values = tf.tile(k_values, [1, b, 1, 1])  # (k, B, F, channel)
-        kernel_outputs = tf.matmul(weighted_features, k_values)  # (k, B, N', F) x (k, B, F, channel) -> (k, B, N', channel)
+        weighted_features = tf.transpose(weighted_features, [1, 0, 2])  # (k, N', F)
+        kernel_outputs = tf.matmul(weighted_features, self.k_values)  # (k, N', F) x (k, F, channel) -> (k, N', channel)
 
         output_features = tf.reduce_sum(kernel_outputs, axis=0)
         return output_features
-
