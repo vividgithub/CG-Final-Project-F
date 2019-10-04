@@ -87,18 +87,20 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         return sum([layer.count_params() for layer in self.sub_layers.values()])
 
     def call(self, inputs, training, **kwargs):
+        pts = inputs[0]  # pts: (B, N, 3)
+        features = inputs[1] # fts: (B, N, F)
+
         is_training = training
         K = self.k
         D = self.d
         C = self.c
-        shape = tf.shape(inputs)
+        shape = tf.shape(pts)
         N = shape[0]
         P = shape[1] if self.p < 0 else self.p
         tag = "XConvLayerCoreV1-"
         depth_multiplier = self.depth_multiplier
         with_global = self.with_global
 
-        pts = inputs[:, :, :3]  # (B, N, 3)
         if self.p < 0:
             qrs = pts
         else:
@@ -117,7 +119,8 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         nn_fts_from_pts_0 = self.dense(nn_pts_local, self.cpf, tag + 'nn_fts_from_pts_0', is_training)
         nn_fts_from_pts = self.dense(nn_fts_from_pts_0, self.cpf, tag + 'nn_fts_from_pts', is_training)
 
-        nn_fts_from_prev = tf.gather_nd(inputs, indices, name=tag + 'nn_fts_from_prev')[:, :, :, 3:]
+        # Use concat the gather_nd to break down when F = 0 (no any features)
+        nn_fts_from_prev = tf.gather_nd(tf.concat([pts, features], axis=-1), indices, name=tag + 'nn_fts_from_prev')[:, :, :, 3:]
         nn_fts_input = tf.concat([nn_fts_from_pts, nn_fts_from_prev], axis=-1, name=tag + 'nn_fts_input')
 
         X_0 = self.conv2d(nn_pts_local, self.k * self.k, tag + 'X_0', is_training, (1, K))
@@ -139,7 +142,7 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         else:
             pass
 
-        return tf.concat([qrs, fts_conv_3d], axis=-1, name=tag+"xconv_output")
+        return qrs, fts_conv_3d
 
 
 XConvPoolingLayer = XConvLayerCoreV1

@@ -91,7 +91,7 @@ def net_from_config(model_conf, data_conf):
         if type(transform_conf) is dict and transform_conf.get("name") == "sampling":
             point_count = None
             logger.log("Ignore point_count since we have transform sampling from dataset")
-    input_layer = tf.keras.layers.InputLayer(input_shape=(point_count, feature_size))
+    # input_layer = tf.keras.layers.InputLayer(input_shape=(point_count, feature_size))
 
     # Extend feature layer
     extend_feature_layer = None
@@ -103,21 +103,19 @@ def net_from_config(model_conf, data_conf):
             assert False, "Other extend feature not implemented"
 
     if net_conf["structure"] == "sequence":
-        # Generate sequence network
-        net = tf.keras.Sequential()
-
-        # Add input layer
-        net.add(input_layer)
+        x = inputs = tf.keras.Input(shape=(point_count, feature_size))  # Input layer
+        x = layers.common.DataSplitLayer()(x)  # Split data
 
         # Add extend feature layer
         if extend_feature_layer:
-            net.add(extend_feature_layer)
+            x = extend_feature_layer(x)
 
-        # Add another
         for layer_conf in net_conf["layers"]:
-            net.add(layer_from_config(layer_conf, model_conf, data_conf))
+            layer = layer_from_config(layer_conf, model_conf, data_conf)
+            x = layer(x)
 
-        return net
+        outputs = x
+        return tf.keras.Model(inputs=inputs, outputs=outputs)
     else:
         assert False, "\"{}\" is currently not supported".format(net_conf["structure"])
 
@@ -152,6 +150,7 @@ class ModelRunner:
 
         # Transform the dataset is the dataset is classification dataset and
         # the model_conf's last output layer is output-conditional-segmentation
+        train_dataset = test_dataset = None
         if self.data_conf["task"] == "classification" and \
                 self.model_conf["net"]["layers"][-1]["name"] == "output-conditional-segmentation":
             layer_conf = self.model_conf["net"]["layers"][-1]
@@ -223,7 +222,7 @@ class ModelRunner:
         net.compile(optimizer, loss=loss, metrics=metrics)
 
         logger.log("Summary of the network:")
-        net.summary(print_fn=lambda x: logger.log(x, prefix=False))
+        net.summary(line_length=240, print_fn=lambda x: logger.log(x, prefix=False))
 
         logger.log("Begin training")
         net.fit(

@@ -2,6 +2,42 @@ from computil import ComputationContext
 import tensorflow as tf
 
 
+class DataSplitLayer(tf.keras.layers.Layer):
+    """
+    Split the input data from (B, N, 3 + F) to a tuple with positions (B, N, 3) and (B, N, F)
+    """
+    def __init__(self):
+        super(DataSplitLayer, self).__init__()
+
+    def call(self, inputs, *args, **kwargs):
+        return inputs[..., :3], inputs[..., 3:]
+
+
+class OutputClassificationSegmentationLayer(tf.keras.layers.Layer):
+    """
+    The final output layer, normally it is a dense layer for converting the feature dimension
+    into the size of number of class for output
+    """
+    def __init__(self, class_count, use_position=False, **kwargs):
+        """
+        Initialization
+        :param class_count: The number of class for output
+        :param use_position: Whether to use the position as extra input for the dense layer
+        """
+        super(OutputClassificationSegmentationLayer, self).__init__()
+        self.class_count = class_count
+        self.use_posiiton = use_position
+        self.dense = tf.keras.Dense(class_count)
+
+    def call(self, inputs, *args, **kwargs):
+        x = tf.concat(inputs, axis=-1) if self.use_posiiton else inputs[1]  # (B, N, F) or (B, N, F + 3)
+        x = self.dense(x, *args, **kwargs)  # (B, N, class_count)
+        return x
+
+    def count_params(self):
+        return self.dense.count_params()
+
+
 class OutputConditionalSegmentationLayer(tf.keras.layers.Layer):
     """
     An output layer for outputting the logits value. Inspired by the code from PointCNN, for a
@@ -9,17 +45,21 @@ class OutputConditionalSegmentationLayer(tf.keras.layers.Layer):
     is (B, N, F) -> (B, N, @class_count). In addition, in testing/validation stage, it first use a
     reduce mean operator to map (B, N, F) to (B, 1, F) for testing classification.
     """
-    def __init__(self, class_count, **kwargs):
+    def __init__(self, class_count, use_position=False, **kwargs):
         """
         Initialize the layer
         :param class_count: The class count for the classification task
+        :param use_position: Whether to use position as extra input to the dense layer
         """
         super(OutputConditionalSegmentationLayer, self).__init__()
         self.dense = tf.keras.layers.Dense(class_count)
+        self.use_position = use_position
 
     def call(self, inputs, training, *args, **kwargs):
-        x = inputs if training else tf.reduce_mean(inputs, axis=1, keepdims=True)  # (B, N/1, F)
-        x = self.dense(x, *args, **kwargs)  # (B, N/1, @class_count)
+        x = tf.concat(inputs, axis=-1) if self.use_position else inputs[1]  # (B, N, F) or (B, N, F + 3)
+        if not training:
+            x = tf.reduce_mean(x, axis=1, keepdims=True)  # (B, N, F) for training and (B, 1, F) for testing
+        x = self.dense(x, *args, **kwargs)  # (B, N/1, class_count)
         return x
 
     def count_params(self):
@@ -48,9 +88,8 @@ class FeatureReshapeLayer(tf.keras.layers.Layer):
 
     def call(self, inputs, *args, **kwargs):
         c = ComputationContext(*args, **kwargs)
-        p = inputs[:, :, :3]  # (B, N, 3)
-        f = inputs[:, :, 3:]  # (B, N, F)
-
+        p = inputs[0]  # p: (B, N, 3)
+        f = inputs[1]  # f: (B, N, F)
         f_ = c(self.layers, f)  # (B, N, F) -> (B, N, self.channels[-1])
 
-        return tf.concat([p, f_], axis=-1)
+        return p, f_
