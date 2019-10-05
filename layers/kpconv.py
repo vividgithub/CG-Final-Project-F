@@ -1,12 +1,14 @@
 import tensorflow as tf
 import logger
 from legacy.kpconv import kpconv_ops, load_kernels
+from utils.confutil import register_conf
 
 
+@register_conf(name="conv-kp", scope="layer", conf_func="self")
 class KPConvLayer(tf.keras.layers.Layer):
     """The KP convolution layer(https://arxiv.org/pdf/1904.08889.pdf)"""
 
-    def __init__(self, channel, k, extent, fixed="center", influence="linear", aggregation="sum"):
+    def __init__(self, channel, k, extent, fixed="center", influence="linear", aggregation="sum", **kwargs):
         """
         Initialize a KP convolution layer
         :param channel: Number of channel to output

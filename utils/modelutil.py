@@ -4,6 +4,12 @@ import math
 from os import path, makedirs
 import logger
 from utils.kerasutil import ModelCallback
+from utils.confutil import object_from_conf, register_conf
+
+# A fake call to register
+register_conf(name="adam", scope="optimizer", conf_func=lambda conf: tf.keras.optimizers.Adam(**conf))(None)
+register_conf(name="exponential_decay", scope="learning_rate",
+              conf_func=lambda conf: tf.keras.optimizers.schedules.ExponentialDecay(**conf))(None)
 
 
 def layer_from_config(layer_conf, model_conf, data_conf):
@@ -15,14 +21,8 @@ def layer_from_config(layer_conf, model_conf, data_conf):
     :param data_conf: The dataset configuration, for generating special layers
     :return: A keras layer
     """
-    name = layer_conf["name"]
-
-    if name == "output-classification" or name == "output-segmentation":
-        return tf.keras.layers.Dense(data_conf["class_count"])
-    elif name == "output-conditional-segmentation":
-        return layers.OutputConditionalSegmentationLayer(data_conf["class_count"])
-    else:
-        return layers.layer_from_config(layer_conf)
+    context = {"class_count": data_conf["class_count"]}
+    return object_from_conf(layer_conf, scope="layer", context=context)
 
 
 def optimizer_from_config(learning_rate, optimizer_conf):
@@ -32,15 +32,8 @@ def optimizer_from_config(learning_rate, optimizer_conf):
     :param optimizer_conf: The optimizer configuration
     :return: An corresponding optimizer
     """
-    optimizer_map = {
-        "adam": tf.keras.optimizers.Adam
-    }
-
-    conf = optimizer_conf.copy()
-    name = conf["name"]
-    del conf["name"]
-
-    return optimizer_map[name](learning_rate=learning_rate, **conf)
+    context = {"learning_rate": learning_rate}
+    return object_from_conf(optimizer_conf, scope="optimizer", context=context)
 
 
 def learning_rate_from_config(learning_rate_conf):
@@ -49,15 +42,7 @@ def learning_rate_from_config(learning_rate_conf):
     :param learning_rate_conf: The learning rate configuration
     :return: A learning rate scheduler
     """
-    learning_rate_map = {
-        "exponential_decay": tf.keras.optimizers.schedules.ExponentialDecay
-    }
-
-    conf = learning_rate_conf.copy()
-    name = conf["name"]
-    del conf["name"]
-
-    return learning_rate_map[name](**conf)
+    return object_from_conf(learning_rate_conf, scope="learning_rate")
 
 
 def net_from_config(model_conf, data_conf):

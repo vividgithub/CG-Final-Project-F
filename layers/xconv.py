@@ -1,5 +1,6 @@
 import tensorflow as tf
 import legacy.pointfly as pf
+from utils.confutil import register_conf
 
 
 class XConvLayerCoreV1(tf.keras.layers.Layer):
@@ -145,9 +146,12 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         return qrs, fts_conv_3d
 
 
-XConvPoolingLayer = XConvLayerCoreV1
+@register_conf(name="pooling-xconv", scope="layer", conf_func="self")
+class XConvPoolingLayer(XConvLayerCoreV1):
+    pass
 
 
+@register_conf(name="conv-xconv", scope="layer", conf_func="self")
 class XConvLayer(XConvLayerCoreV1):
     """
     The actual convolution layer. Different from the XConvLayerCore, it doesn't take "p" as a parameter, it maps

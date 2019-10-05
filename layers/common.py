@@ -1,18 +1,21 @@
 from utils.computil import ComputationContext
 import tensorflow as tf
+from utils.confutil import register_conf
 
 
+@register_conf(name="data-split", scope="layer", conf_func="self")
 class DataSplitLayer(tf.keras.layers.Layer):
     """
     Split the input data from (B, N, 3 + F) to a tuple with positions (B, N, 3) and (B, N, F)
     """
-    def __init__(self):
+    def __init__(self, **kwargs):
         super(DataSplitLayer, self).__init__()
 
     def call(self, inputs, *args, **kwargs):
         return inputs[..., :3], inputs[..., 3:]
 
 
+@register_conf(name=["output-segmentation", "output-classification"], scope="layer", conf_func="self")
 class OutputClassificationSegmentationLayer(tf.keras.layers.Layer):
     """
     The final output layer, normally it is a dense layer for converting the feature dimension
@@ -38,6 +41,7 @@ class OutputClassificationSegmentationLayer(tf.keras.layers.Layer):
         return self.dense.count_params()
 
 
+@register_conf(name="output-conditional-segmentation", scope="layer", conf_func="self")
 class OutputConditionalSegmentationLayer(tf.keras.layers.Layer):
     """
     An output layer for outputting the logits value. Inspired by the code from PointCNN, for a
@@ -66,6 +70,7 @@ class OutputConditionalSegmentationLayer(tf.keras.layers.Layer):
         return self.dense.count_params()
 
 
+@register_conf(name="feature-reshape", scope="layer", conf_func="self")
 class FeatureReshapeLayer(tf.keras.layers.Layer):
     """
     A feature resize layer that reshape the feature dimension using several dense layer with dropout

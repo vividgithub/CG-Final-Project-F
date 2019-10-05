@@ -48,16 +48,16 @@ class ConfigManager:
         name = conf["name"]
 
         if scope is None:
-            types_ = self.flat_map[name]
-            if len(types_) != 1:
+            conf_funcs = self.flat_map[name]
+            if len(conf_funcs) != 1:
                 raise KeyError(name)
-            type_ = types_[0]
+            conf_func = conf_funcs[0]
         else:
             # Scope is provided
-            type_ = self.map[(scope, name)]
+            conf_func = self.map[(scope, name)]
 
         merged_conf = {**(context or dict()), **conf}
-        type_.conf_func(merged_conf)
+        return conf_func(merged_conf)
 
 
 _shared_conf_manager = ConfigManager()  # Global configuration manager
@@ -66,7 +66,7 @@ _shared_conf_manager = ConfigManager()  # Global configuration manager
 def register_conf(name, scope, conf_func=None, delete_name=True):
     """
     A decorator to register a type to the shared configuration manager
-    :param name: The name for registering
+    :param name: The name for registering, or a list or tuple to register multiple name
     :param scope: The scope for registering
     :param conf_func: An optional configuration function. If it is provided, it will be registered. If it is None, then
     the decorator will check whether the type has an "conf_func" attribute and register it. Or you can provide
@@ -79,16 +79,18 @@ def register_conf(name, scope, conf_func=None, delete_name=True):
     def _register_conf(type_):
         if conf_func == "self":
             assert callable(type_), f"{type_} is not callable"
-            actual_conf_func = lambda conf: type_(**conf)
+            conf_func1 = lambda conf: type_(**conf)
         else:
-            actual_conf_func = conf_func or type_.conf_func
+            conf_func1 = conf_func or type_.conf_func
 
         # delete_name wrapper
-        if delete_name:
-            actual_conf_func = \
-                lambda conf_with_name: actual_conf_func({k: v for k, v in conf_with_name.items() if k != "name"})
+        conf_func2 = (lambda conf: conf_func1({k: v for k, v in conf.items() if k != "name"})) \
+            if delete_name else conf_func1
 
-        _shared_conf_manager.register_conf(scope, name, actual_conf_func)
+        # Register multiple names
+        names = name if isinstance(name, (list, tuple)) else [name]
+        for n in names:
+            _shared_conf_manager.register_conf(name=n, scope=scope, conf_func=conf_func2)
         return type_
 
     return _register_conf
