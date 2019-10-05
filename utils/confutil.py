@@ -17,11 +17,11 @@ class ConfigManager:
         self.flat_map = dict()
         self.map = dict()
 
-    def register_conf(self, scope, name, conf_func):
+    def register_conf(self, name, scope, conf_func):
         """
         Adds an entry to the configuration manager
-        :param scope: The scope to search, should be in SCOPES
         :param name: The name to register
+        :param scope: The scope to search, should be in SCOPES
         :param conf_func: A function that takes a configuration dictionary as parameter
         and returns an instance of that object
         :return: None
@@ -34,13 +34,13 @@ class ConfigManager:
         self.flat_map.setdefault(name, []).append(conf_func)
         self.map[(scope, name)] = conf_func
 
-    def get(self, conf, context=None, scope=None):
+    def get(self, conf, scope=None, context=None):
         """
         Get an instance from configuration optional and context
         :param conf: The configuration, must have a name in the configuration
+        :param scope: The scope of the name
         :param context: The additional context to provide, it will be merged into "conf" as a dict and provide
         to the "conf_func"
-        :param scope: The scope of the name
         :raise KeyError: When we doesn't have "name" in conf, or it is not registered, or the name
         is conflicted when scope is not provided
         :return: A configurable object
@@ -63,18 +63,43 @@ class ConfigManager:
 _shared_conf_manager = ConfigManager()  # Global configuration manager
 
 
-def register_conf(scope, name, conf_func=None):
+def register_conf(name, scope, conf_func=None, delete_name=True):
     """
     A decorator to register a type to the shared configuration manager
-    :param scope: The scope for registering
     :param name: The name for registering
+    :param scope: The scope for registering
     :param conf_func: An optional configuration function. If it is provided, it will be registered. If it is None, then
     the decorator will check whether the type has an "conf_func" attribute and register it. Or you can provide
     'conf_func="self"' to register the type itself as the configuration function
+    :param delete_name: Whether name should be deleted when trying to initializing an object with the configuration
+    function
     :raise AttributeError: If conf_func is None and the registered type doesn't have "conf_func" attribute
+    :raise AssertionError: If conf_func is "self" but the provided object is not callable
     """
     def _register_conf(type_):
-        actual_conf_func = type_ if conf_func == "self" else (conf_func or type_.conf_func)
+        if conf_func == "self":
+            assert callable(type_), f"{type_} is not callable"
+            actual_conf_func = lambda conf: type_(**conf)
+        else:
+            actual_conf_func = conf_func or type_.conf_func
+
+        # delete_name wrapper
+        if delete_name:
+            actual_conf_func = \
+                lambda conf_with_name: actual_conf_func({k: v for k, v in conf_with_name.items() if k != "name"})
+
         _shared_conf_manager.register_conf(scope, name, actual_conf_func)
         return type_
+
     return _register_conf
+
+
+def object_from_conf(conf, scope=None, context=None):
+    """
+    Get an instance from configuration
+    :param conf: The configuration dictionary
+    :param scope: The registered scope, maybe none to enable a global search if the name is unique
+    :param context: Additional context to provide for initialization for an object
+    :return: An instance
+    """
+    return _shared_conf_manager.get(conf, scope=scope, context=context)
