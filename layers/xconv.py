@@ -7,7 +7,8 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
     """
     The X-Conv kernel used in "PointCNN"(https://arxiv.org/abs/1801.07791)
     """
-    def __init__(self, p, k, d, c, cpf, depth_multiplier=2, sampling="random", sorting_method=None, with_global=False, **kwargs):
+    def __init__(self, p, k, d, c, cpf, depth_multiplier=2, sampling="random",
+                 sorting_method=None, with_global=False, label=None, **kwargs):
         """
         The X-Conv kernel, from "PointCNN"(https://arxiv.org/abs/1801.07791). It takes an tensor input
         (BxNxF) and generate a tensor with shape (Bxpxc).
@@ -22,8 +23,9 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
         farthest neighbor sampling method
         :param sorting_method: How to give the point order before convolution. Currently it is just a placeholder
         :param with_global: Whether to add the global position in convolution
+        :param label: An optional label for the layer
         """
-        super(XConvLayerCoreV1, self).__init__()
+        super(XConvLayerCoreV1, self).__init__(name=label)
         self.p = p
         self.k = k
         self.d = d

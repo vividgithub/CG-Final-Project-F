@@ -43,6 +43,7 @@ add_library(
 	${SOURCE_CODE_LEGACY_DIR}/tf_neighbors/tf_batch_neighbors.cpp
 	${SOURCE_CODE_LEGACY_DIR}/tf_subsampling/grid_subsampling/grid_subsampling.cpp
 	${SOURCE_CODE_LEGACY_DIR}/tf_subsampling/tf_batch_subsampling.cpp
+	${SOURCE_CODE_DIR}/fixed_radius_search.cpp
 	${EXTERNAL_SOURCES}
 )
 

@@ -8,7 +8,7 @@ from utils.confutil import register_conf
 class KPConvLayer(tf.keras.layers.Layer):
     """The KP convolution layer(https://arxiv.org/pdf/1904.08889.pdf)"""
 
-    def __init__(self, channel, k, extent, fixed="center", influence="linear", aggregation="sum", **kwargs):
+    def __init__(self, channel, k, extent, fixed="center", influence="linear", aggregation="sum", label=None, **kwargs):
         """
         Initialize a KP convolution layer
         :param channel: Number of channel to output
@@ -17,7 +17,9 @@ class KPConvLayer(tf.keras.layers.Layer):
         :param fixed: String in ('none', 'center' or 'verticals') - fix position of certain kernel points
         :param influence: String in ('constant', 'linear', 'gaussian') - influence function of the kernel points
         :param aggregation: String in ('closest', 'sum') - whether to sum influences, or only keep the closest
+        :param label: An optional label for the layer
         """
+        super(KPConvLayer, self).__init__(name=label)
         self.channel = channel
         self.k = k
         self.extent = extent
@@ -33,10 +35,10 @@ class KPConvLayer(tf.keras.layers.Layer):
 
     def build(self, input_shapes):
         # Inputs should be
-        #   points (B, N, 3),
-        #   features (B, N, F),
-        #   output_points (B, N', 3)
-        #   neighbor_indices (B, N', #neighbor))
+        #   points (N, 3),
+        #   features (N, F),
+        #   output_points (N', 3)
+        #   neighbor_indices (N', (neighbor))
         #
         # Add a weight with size (k, F, channel) to the output
         f = input_shapes[1][-1]

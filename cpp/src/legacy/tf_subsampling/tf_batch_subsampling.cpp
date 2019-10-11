@@ -13,9 +13,11 @@ REGISTER_OP("BatchGridSubsampling")
     .Output("sub_batches: int32")
     .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
         ::tensorflow::shape_inference::ShapeHandle input0_shape;
+
         TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &input0_shape));
         c->set_output(0, input0_shape);
         c->set_output(1, c->input(1));
+
         return Status::OK();
     });
 
