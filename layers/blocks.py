@@ -1,6 +1,7 @@
 import tensorflow as tf
 from utils.confutil import register_conf, object_from_conf
-from utils.computil import ComputationContext
+from layers.pooling import PoolingLayer
+from layers.base import ComposeLayer
 
 
 def unpack_ragged(x, name=None):
@@ -88,40 +89,45 @@ def unpack_ragged(x, name=None):
 
 
 @register_conf("block-res", scope="layer")
-class ResBlock(tf.keras.layers.Layer):
+class ResBlock(ComposeLayer):
 
     _SIMPLE = "simple"
     _NORMAL = "normal"
     _BOTTLENECK = "bottleneck"
-    _BOTTLENECK_STRIDED = "bottleneck-strided"
+    _BOTTLENECK_STRIDE = "bottleneck-stride"
 
     @staticmethod
-    def SHOULD_SAMPLING(structure):
-        return structure != ResBlock._BOTTLENECK_STRIDED
+    def _should_sampling(structure):
+        return structure == ResBlock._BOTTLENECK_STRIDE
 
     @staticmethod
-    def HAS_SHORTCUT(structure):
+    def _has_shortcut(structure):
         return structure != ResBlock._SIMPLE
 
     @staticmethod
-    def BOTTLENECK(structure):
-        return structure in [ResBlock._BOTTLENECK, ResBlock._BOTTLENECK_STRIDED]
+    def _bottleneck(structure):
+        return structure in [ResBlock._BOTTLENECK, ResBlock._BOTTLENECK_STRIDE]
+
+    @staticmethod
+    def _num_channel_for_convolution_output(structure, channel):
+        return channel // 4 if ResBlock._bottleneck(structure) else channel
 
     """
     Resnet-like block for 3D point classification and segmentation. Different from the simple block, it adds an
     shortcut link and sums the final value to the output, just like the residual block that used in image.
     Currently it supports 3 types of structures. The "simple" structure only contains the mainline without the shortcut. 
-    The mainline consists of (Conv -> Activation -> BatchNormalization); the "normal" structure extended the "simple" 
+    The mainline consists of (Conv[BN, ACTIVATION]); the "normal" structure extended the "simple" 
     by adding its value with the shortcut. The "bottleneck" block, in which the mainline is constructed with
-    (Dense -> Conv -> Dense), where the Dense is used to shrink or extend the last feature layer.
-    The "bottleneck-strided" resembles the structure of "bottleneck", except that it does a sampling in the mainline
-    and shortcut link, so the output will has smaller point set than the input
+    (1x1 Conv(BN, ACTIVATION] -> Conv[BN, ACTIVATION] -> 1x1 Conv[BN, ACTIVATION]), where the Dense is used to 
+    shrink or extend the last feature layer. The "bottleneck-stride" resembles the structure of "bottleneck", 
+    except that it does a sampling in the mainline and shortcut link, so the output will has smaller 
+    point set than the input
     """
     def __init__(self, structure, channel, neighbor_layer, conv_layer,
-                 sampling_layer=None, pooling_layer=None, activation=None):
+                 sampling_layer=None, pooling_layer=None, activation=None, label=None, **kwargs):
         """
         Initialization
-        :param structure: The structure of layer, supports "simple", "normal", "bottleneck" and "bottleneck-strided"
+        :param structure: The structure of layer, supports "simple", "normal", "bottleneck" and "bottleneck-stride"
         :param channel: The channel for output
         :param neighbor_layer: The layer to query neighbor. The neighbor layer accepts an inputs (N, 3) and (N', 3)
         and their row splits value and generate a tuple representing ragged tensor for neighbor indices (N', (neighbor))
@@ -129,15 +135,18 @@ class ResBlock(tf.keras.layers.Layer):
         the neighbor indices: (N', (neighbor)) and generate new point feature (N', F')
         :param sampling_layer: The sampling layer accepts points: (N, 3) and row_splits: (B + 1) and generate a
         sub-sampling points output_points: (N', 3) and output_row_splits: (B + 1). Sampling layer is only required
-        for strided structure
+        for stride structure
         :param pooling_layer: The pooling layer accepts points: (N, 3), features: (N, F), output_points: (N', 3) and
         the neighbor indices: (N', (neighbor)) and generate pooled feature (N', F). Pooling layer is only required
-        for strided structure
+        for stride structure
         :param activation: The activation used in the block
+        :param label: An optional label for this layer
         """
-        assert structure in [ResBlock._NORMAL, ResBlock._BOTTLENECK, ResBlock._BOTTLENECK_STRIDED, ResBlock._SIMPLE], \
+        super(ResBlock, self).__init__(name=label)
+
+        assert structure in [ResBlock._NORMAL, ResBlock._BOTTLENECK, ResBlock._BOTTLENECK_STRIDE, ResBlock._SIMPLE], \
             f"Structure {structure} is not supported in ResBlock"
-        assert not (structure == ResBlock._BOTTLENECK_STRIDED and (sampling_layer is None or pooling_layer is None)), \
+        assert not (structure == ResBlock._BOTTLENECK_STRIDE and (sampling_layer is None or pooling_layer is None)), \
             f"Structure is {structure} but sampling layer or pooling layer is None, " \
             f"sampling_layer={sampling_layer}, pooling_layer={pooling_layer}"
 
@@ -148,16 +157,15 @@ class ResBlock(tf.keras.layers.Layer):
         self.sampling_layer = sampling_layer
         self.pooling_layer = pooling_layer
         self.activation = activation or "leaky_relu"
-        self.activation_func = tf.keras.activations.get(self.activation)
 
     def should_sampling(self):
-        return self.SHOULD_SAMPLING(self.structure)
+        return self._should_sampling(self.structure)
 
     def has_shortcut(self):
-        return self.HAS_SHORTCUT(self.structure)
+        return self._has_shortcut(self.structure)
 
     def bottleneck(self):
-        return self.BOTTLENECK(self.structure)
+        return self._bottleneck(self.structure)
 
     @staticmethod
     def conf_func(conf):
@@ -168,7 +176,7 @@ class ResBlock(tf.keras.layers.Layer):
         """
         channel = conf["channel"]
         structure = conf["structure"]
-        channel_for_conv = channel // 4 if ResBlock.BOTTLENECK(structure) else channel
+        channel_for_conv = ResBlock._num_channel_for_convolution_output(structure, channel)
 
         # Parse the "neighbor", "conv", "sampling" and "pooling" to construct layer
         # and inject the channel context to the convolution layer
@@ -179,17 +187,27 @@ class ResBlock(tf.keras.layers.Layer):
                 scope="layer"
             ),
             sampling_layer=object_from_conf(conf["sampling"], scope="layer") if "sampling" in conf else None,
-            pooling_layer=object_from_conf(conf["pooling"], scope="layer") if "pooling" in conf else None,
+            pooling_layer=PoolingLayer(method=conf["pooling"]),
             **{k: v for k, v in conf.items() if k not in ["neighbor", "conv", "sampling", "pooling"]}
         )
 
     def count_params(self):
-        layers = [self.neighbor_layer, self.conv_layer, self.sampling_layer, self.pooling_layer]
+        layers = [self.neighbor_layer, self.conv_layer, self.sampling_layer, self.pooling_layer, *self.sub_layers]
         return sum([
             layer.count_params() if hasattr(layer, "count_params") else 0 for layer in layers
         ])
 
     def call(self, inputs, *args, **kwargs):
+
+        def unary_conv(name, x, fdim, activated, normalized):
+            with tf.name_scope(name):
+                x = self.add_layer(name + "-Dense", tf.keras.layers.Dense, fdim, activation=None)(x, *args, **kwargs)
+                x = self.add_layer(name + "-BN", tf.keras.layers.BatchNormalization)(x, *args, **kwargs) \
+                    if normalized else x
+                x = self.add_layer(name + "-Activation", tf.keras.layers.Activation,
+                                   self.activation)(x, *args, **kwargs) if activated else x
+            return x
+
         # points: (B, (N), 3)
         # features: (B, (N), F)
         points, features = inputs[0], inputs[1]
@@ -198,15 +216,9 @@ class ResBlock(tf.keras.layers.Layer):
         points, row_splits = unpack_ragged(points, name="UnpackPoints")
         features, _ = unpack_ragged(features, name="UnpackFeatures")
 
-        def unary_conv(x, fdim, activated, normalized):
-            x = tf.keras.layers.Dense(fdim, activation=None)(x, *args, **kwargs)
-            x = tf.keras.layers.BatchNormalization()(x, *args, **kwargs) if normalized else x
-            x = self.activation_func(x) if activated else x
-            return x
-
         # Determine the output_points (N', 3)
         # For convolution, it should equal to the points.
-        # For strided-based structure, it will use sampling to get the output
+        # For stride-based structure, it will use sampling to get the output
         # output_points: (N', 3)
         # output_row_splits: (N', 3)
         if not self.should_sampling():
@@ -221,25 +233,27 @@ class ResBlock(tf.keras.layers.Layer):
         shortcut = None
         if self.has_shortcut():
             with tf.name_scope("Shortcut"):
-                if self.should_sampling():
-                    shortcut = self.pooling_layer(points, features, neighbor_indices, *args, **kwargs)  # (N', F)
-                shortcut = unary_conv(shortcut, self.channel, activated=False, normalized=True)  # (N', F')
+                shortcut = self.pooling_layer(points, features, neighbor_indices, *args, **kwargs) \
+                    if self.should_sampling() else points  # (N', F)
+                shortcut = unary_conv("Shortcut-1x1-Conv", shortcut, self.channel,
+                                      activated=False, normalized=True)  # (N', F')
 
         # Mainline
         with tf.name_scope("Mainline"):
             # 1x1 convolution for bottleneck
-            mainline = unary_conv(features, self.channel // 4, activated=True, normalized=True) \
+            mainline = unary_conv("Pre-1x1-Conv", features, self.channel // 4, activated=True, normalized=True) \
                 if self.bottleneck() else features  # (N', F) for non-bottleneck or (N', F'/4)
             # Convolution
             mainline = self.conv_layer(mainline, *args, **kwargs)  # (N', F') for non-bottleneck or (N', F'/4)
             # 1x1 convolution for bottleneck
-            mainline = unary_conv(features, self.channel, activated=False, normalized=True) \
+            mainline = unary_conv("Post-1x1-Conv", mainline, self.channel, activated=False, normalized=True) \
                 if self.bottleneck() else mainline  # (N', F')
 
         # Add mainline and shortcut
         output_features = mainline + shortcut if self.has_shortcut() else mainline  # (N', F')
         # Final activation
-        output_features = self.activation_func(output_features)
+        output_features = self.add_layer("OutputActivation", tf.keras.layers.Activation,
+                                         self.activation)(output_features, *args, **kwargs)  # (N', F')
 
         return (
             tf.RaggedTensor(output_points, row_splits=output_row_splits),
