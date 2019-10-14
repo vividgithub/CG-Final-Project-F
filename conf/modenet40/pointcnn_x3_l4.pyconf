@@ -7,7 +7,7 @@
             {"name": "repeat"},
             {"name": "shuffle", "buffer_multiplier": 4},
             {"name": "clip-feature", "c": 3},
-            {"name": "scaling", "range": (1.0, 1.1)},
+            {"name": "scaling", "range": (1.0, 1.1), "anisotropic": False},
             {"name": "rotation", "policy": "euler", "range": [(0.0, 0.0), (0.0, 3.1415926), (0.0, 0.0)]},
             "------------",
             {"name": "sampling", "sample_num": 1024, "policy": "random-gauss", "stddev": 128, "range": (1024, 1024)}

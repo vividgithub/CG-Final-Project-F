@@ -250,17 +250,22 @@ def transform_sampling(sample_num, policy="random-gauss", range=None, stddev=Non
 
 @register_conf(name="scaling", scope="transform", conf_func="self")
 @dataset_map_transform
-def transform_scaling(range=(0.0, 0.05), **kwargs):
+def transform_scaling(range=(0.0, 0.05), anisotropic=True, **kwargs):
     """
     Given an input of NxF, random scaling the coordinate. That is, transform the first 3 features but remains the
     other features unchanged
     :param range: The random scaling range
+    :param anisotropic: Whether to use different scale factor for each axis
     :return: A function (NxF, _) -> (NxF, _), where the return point features have been transformed.
     "_" indicates the label input will remain unchanged.
     """
+
     return lambda points, label: (
         tf.concat(
-            [points[..., :3] * tf.random.uniform((), minval=range[0], maxval=range[1]), points[..., 3:]],
+            [
+                points[..., :3] * tf.random.uniform((3, ) if anisotropic else (), minval=range[0], maxval=range[1]),
+                points[..., 3:]
+            ],
             axis=-1
         ),
         label

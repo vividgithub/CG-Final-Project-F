@@ -1,0 +1,239 @@
+# IN 0 "simple":
+# KPConv: fixed=center, KP_extent=0.02, KP_influence=linear, aggregation_mode=sum
+#
+# IN 1 "resnetb":
+# KPConv: fixed=center, KP_extent=0.02, KP_influence=linear, aggregation_mode=sum
+#
+# IN 2 "resnetb_strided":
+# KPConv: fixed=center, KP_extent=0.02, KP_influence=linear, aggregation_mode=sum
+#
+# Conv neighbor, r=0.05
+# Pooling grid_sampling, dl=0.04
+# Limit neighbor, limit=7
+# -------------------------------------------------------------------------------
+#
+# IN 3 "resnetb":
+# KPConv: fixed=center, KP_extent=0.04, KP_influence=linear, aggregation_mode=sum
+#
+# IN 4 "resnetb_strided":
+# KPConv: fixed=center, KP_extent=0.04, KP_influence=linear, aggregation_mode=sum
+#
+# Conv neighbor, r=0.1
+# Pooling grid_sampling, dl=0.08
+# Limit neighbor, limit=21
+# -------------------------------------------------------------------------------
+#
+# IN 5 "resnetb":
+# KPConv: fixed=center, KP_extent=0.08, KP_influence=linear, aggregation_mode=sum
+#
+# IN 6 "resnetb_strided":
+# KPConv: fixed=center, KP_extent=0.08, KP_influence=linear, aggregation_mode=sum
+#
+# Conv neighbor, r=0.2
+# Pooling grid_sampling, dl=0.16
+# Limit neighbor, limit=37
+# -------------------------------------------------------------------------------
+#
+# IN 7 "resnetb":
+# KPConv: fixed=center, KP_extent=0.16, KP_influence=linear, aggregation_mode=sum
+#
+# IN 8 "resnetb_strided":
+# KPConv: fixed=center, KP_extent=0.16, KP_influence=linear, aggregation_mode=sum
+#
+# Conv neighbor, r=0.4
+# Pooling grid_sampling, dl=0.32
+# Limit neighbor, limit=40
+# ------------------------------------------------------------------------------
+#
+# IN 9 resnetb":
+# KPConv: fixed=center, KP_extent=0.32, KP_influence=linear, aggregation_mode=sum
+#
+# Conv neighbor, r=0.8
+# Limit neighbor, limit=35
+# ----------------------------------------------------------------------------
+#
+# IN 10 of "global_average":
+
+#########################
+# Architecture definition
+#########################
+
+# Define layers
+# architecture = ['simple',
+#                 'resnetb',
+#                 'resnetb_strided',
+#                 'resnetb',
+#                 'resnetb_strided',
+#                 'resnetb',
+#                 'resnetb_strided',
+#                 'resnetb_deformable',
+#                 'resnetb_deformable_strided',
+#                 'resnetb_deformable',
+#                 'global_average']
+# architecture = ['simple',
+#                 'resnetb',
+#                 'resnetb_strided',
+#                 'resnetb',
+#                 'resnetb_strided',
+#                 'resnetb',
+#                 'resnetb_strided',
+#                 'resnetb',
+#                 'resnetb_strided',
+#                 'resnetb',
+#                 'global_average']
+
+
+
+
+
+# IN "resnetb"(1024 --> 2048):
+# KPConv: fixed=center, KP_extent=0.32, KP_influence=linear, aggregation_mode=sum
+
+
+{
+    "dataset": {
+        "name": "ModelNet40-2048",
+        "train_load_policy": "normal",
+        "test_load_policy": "normal",
+        "train_transforms": [
+            {"name": "repeat"},
+            {"name": "shuffle", "buffer_multiplier": 10},
+            {"name": "clip-feature", "c": 3},
+            {"name": "scaling", "range": (0.9, 1.1), "anisotropic": True},
+            "------------",
+        ],
+        "test_transforms": [
+            {"name": "clip-feature", "c": 3},
+            "------------",
+        ]
+    },
+    "net": {
+        "structure": "sequence",
+        "extend_feature": "one",
+        "layers": [
+            {
+                "name": "block-res",
+                "label": "simple-1-1",
+                "structure": "simple",
+                "channel": 64,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.05, "limit": 7},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.02},
+                "momentum": "@_/momentum"
+            },
+            {
+                "name": "block-res",
+                "label": "res-bottle-1-2",
+                "structure": "bottleneck",
+                "channel": 128,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.05, "limit": 7},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.02},
+                "momentum": "@_/momentum"
+            },
+            {
+                "name": "block-res",
+                "label": "res-bottle-stride-1-3",
+                "structure": "bottleneck-stride",
+                "channel": 128,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.05, "limit": 7},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.02},
+                "sampling": {"name": "sampling-grid", "dl": 0.04},
+                "momentum": "@_/momentum"
+            },
+            #------------------------------------------------------------------
+            {
+                "name": "block-res",
+                "label": "res-bottle-2-1",
+                "structure": "bottleneck",
+                "channel": 256,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.1, "limit": 21},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.04},
+                "momentum": "@_/momentum"
+            },
+            {
+                "name": "block-res",
+                "label": "res-bottle-stride-2-2",
+                "structure": "bottleneck-stride",
+                "channel": 256,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.1, "limit": 21},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.04},
+                "sampling": {"name": "sampling-grid", "dl": 0.08},
+                "momentum": "@_/momentum"
+            },
+            #------------------------------------------------------------------
+            {
+                "name": "block-res",
+                "label": "res-bottle-3-1",
+                "structure": "bottleneck",
+                "channel": 512,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.2, "limit": 37},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.08},
+                "momentum": "@_/momentum"
+            },
+            {
+                "name": "block-res",
+                "label": "res-bottle-stride-3-2",
+                "structure": "bottleneck-stride",
+                "channel": 512,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.2, "limit": 37},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.08},
+                "sampling": {"name": "sampling-grid", "dl": 0.16},
+                "momentum": "@_/momentum"
+            },
+            #------------------------------------------------------------------
+            {
+                "name": "block-res",
+                "label": "res-bottle-4-1",
+                "structure": "bottleneck",
+                "channel": 1024,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.4, "limit": 40},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.16},
+                "momentum": "@_/momentum"
+            },
+            {
+                "name": "block-res",
+                "label": "res-bottle-stride-4-2",
+                "structure": "bottleneck-stride",
+                "channel": 1024,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.4, "limit": 40},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.16},
+                "sampling": {"name": "sampling-grid", "dl": 0.32},
+                "momentum": "@_/momentum"
+            },
+            #------------------------------------------------------------------
+            {
+                "name": "block-res",
+                "label": "res-bottle-5-1",
+                "structure": "bottleneck",
+                "channel": 2048,
+                "neighbor": {"name": "neighbor-fixed", "radius": 0.8, "limit": 35},
+                "conv": {"name": "conv-kp", "k": 15, "extent": 0.32},
+                "momentum": "@_/momentum"
+            },
+            {"name": "pooling-global", "label": "global-pooling", "method": "average"},
+            #------------------------------------------------------------------
+            {"name": "feature-reshape", "label": "feature-reshape", "channels": [1024], "dropout": [0.5]},
+            {"name": "output-classification", "label": "output"}
+        ]
+    },
+    "control": {
+        "validation_step": 500,
+        "tensorboard_sync_step": 100,
+        "train_epoch": 402,
+        "batch_size": 16,
+        "learning_rate": {
+            "name": "exponential_decay",
+            "initial_learning_rate": 0.001,
+            "decay_steps": 615,
+            "decay_rate": 0.9716279515771061,
+            "staircase": True
+        },
+        "optimizer": {
+            "name": "sgd",
+            "momentum": 0.98
+            # clip: 100.0, just a note
+        }
+    },
+    "_": {
+        "momentum": 0.98  # For batch normalization
+    }
+}

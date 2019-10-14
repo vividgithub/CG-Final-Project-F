@@ -124,7 +124,7 @@ class ResBlock(ComposeLayer):
     point set than the input
     """
     def __init__(self, structure, channel, neighbor_layer, conv_layer,
-                 sampling_layer=None, pooling_layer=None, activation=None, label=None, **kwargs):
+                 sampling_layer=None, pooling_layer=None, activation=None, momentum=0.99, label=None, **kwargs):
         """
         Initialization
         :param structure: The structure of layer, supports "simple", "normal", "bottleneck" and "bottleneck-stride"
@@ -140,6 +140,7 @@ class ResBlock(ComposeLayer):
         the neighbor indices: (N', (neighbor)) and generate pooled feature (N', F). Pooling layer is only required
         for stride structure
         :param activation: The activation used in the block
+        :param momentum: The momentum for batch normalization
         :param label: An optional label for this layer
         """
         super(ResBlock, self).__init__(name=label)
@@ -157,6 +158,7 @@ class ResBlock(ComposeLayer):
         self.sampling_layer = sampling_layer
         self.pooling_layer = pooling_layer
         self.activation = activation or "leaky_relu"
+        self.bn_momentum = momentum
 
     def should_sampling(self):
         return self._should_sampling(self.structure)
@@ -187,7 +189,7 @@ class ResBlock(ComposeLayer):
                 scope="layer"
             ),
             sampling_layer=object_from_conf(conf["sampling"], scope="layer") if "sampling" in conf else None,
-            pooling_layer=PoolingLayer(method=conf["pooling"]),
+            pooling_layer=PoolingLayer(method=conf["pooling"]) if "pooling" in conf else None,
             **{k: v for k, v in conf.items() if k not in ["neighbor", "conv", "sampling", "pooling"]}
         )
 
@@ -202,8 +204,8 @@ class ResBlock(ComposeLayer):
         def unary_conv(name, x, fdim, activated, normalized):
             with tf.name_scope(name):
                 x = self.add_layer(name + "-Dense", tf.keras.layers.Dense, fdim, activation=None)(x, *args, **kwargs)
-                x = self.add_layer(name + "-BN", tf.keras.layers.BatchNormalization)(x, *args, **kwargs) \
-                    if normalized else x
+                x = self.add_layer(name + "-BN", tf.keras.layers.BatchNormalization,
+                                   momentum=self.bn_momentum)(x, *args, **kwargs) if normalized else x
                 x = self.add_layer(name + "-Activation", tf.keras.layers.Activation,
                                    self.activation)(x, *args, **kwargs) if activated else x
             return x
