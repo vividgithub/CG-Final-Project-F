@@ -100,7 +100,7 @@ def load_dataset(dir, model_conf):
     Load a dataset from a specified directory
     :param dir: The directory of the dataset, make sure that it has a "conf.pyconf" file
     :param model_conf: The configuration dictionary of model
-    :return: A tuple (dataset, dict) where dict is the configuration
+    :return: A tuple (train_dataset, test_dataset, conf) where conf is the data configuration
     """
     loaders = {
         "dataset-h5": load_dataset_h5
