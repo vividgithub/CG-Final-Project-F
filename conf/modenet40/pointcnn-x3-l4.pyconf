@@ -4,43 +4,44 @@
         "train_load_policy": "normal",
         "test_load_policy": "normal",
         "train_transforms": [
+            {"name": "repeat"},
+            {"name": "shuffle", "buffer_multiplier": 4},
             {"name": "clip-feature", "c": 3},
-            {"name": "scaling", "range": (0.0, 0.1)},
+            {"name": "scaling", "range": (1.0, 1.1)},
             {"name": "rotation", "policy": "euler", "range": [(0.0, 0.0), (0.0, 3.1415926), (0.0, 0.0)]},
             "------------",
-            {"name": "sampling", "sample_num": 1024, "policy": "random", "variance": 0.125, "clip": 0.25},
+            {"name": "sampling", "sample_num": 1024, "policy": "random-gauss", "stddev": 128, "range": (1024, 1024)}
         ],
         "test_transforms": [
             {"name": "clip-feature", "c": 3},
             "------------",
-            {"name": "sampling", "sample_num": 1024, "policy": "random"}
+            {"name": "sampling", "sample_num": 1024, "policy": "random-gauss", "stddev": 128, "range": (1024, 1024)}
         ]
     },
     "net": {
-        "structure": {
-            "name": "resnet-1",
-            "layers": [
-                {"name": "conv-xconv", "k": 8, "d": 1, "p": -1, "c": 16 * 3, "with_global": True},
-                {"name": "conv-xconv", "k": 12, "d": 2, "p": 384, "c": 32 * 3, "with_global": True},
-                {"name": "conv-xconv", "k": 16, "d": 2, "p": 128, "c": 64 * 3, "with_global": True},
-                {"name": "conv-xconv", "k": 16, "d": 3, "p": 128, "c": 128 * 3, "with_global": True},
-                {"name": "pooling-dense", "channels": [128 * 3, 64 * 3], "dropout": [0.0, 0.8]}
-            ]
-        }
+        "structure": "sequence",
+        "extend_feature": "none",
+        "layers": [
+            {"name": "conv-xconv", "k": 8, "d": 1, "c": 16 * 3, "cpf": 24, "depth_multiplier": 4, "sampling": "random", "sorting_method": None, "with_global": False},
+            {"name": "pooling-xconv", "k": 12, "d": 2, "p": 384, "c": 32 * 3, "cpf": 12, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
+            {"name": "pooling-xconv", "k": 16, "d": 2, "p": 128, "c": 64 * 3, "cpf": 24, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
+            {"name": "pooling-xconv", "k": 16, "d": 3, "p": 128, "c": 128 * 3, "cpf": 48, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": True},
+            {"name": "feature-reshape", "channels": [128 * 3, 64 * 3], "dropout": [0.0, 0.8]},
+            {"name": "output-conditional-segmentation", "output_size": 128}  # Indicate the output is (B, N, @class_count) instead of (B, @class_count)
+        ]
     },
     "control": {
         "validation_step": 500,
+        "tensorboard_sync_step": 100,
         "train_epoch": 1024,
         "batch_size": 128,
         "learning_rate": {
             "name": "exponential_decay",
-            "base": 0.01,
-            "decay_step": 8000,
+            "initial_learning_rate": 0.01,
+            "decay_steps": 8000,
             "decay_rate": 0.5,
-            "learning_rate_min": 1e-6,
             "staircase": True
         },
-        "weight_decay": 1e-5,
         "optimizer": {
             "name": "adam",
             "epsilon": 1e-2

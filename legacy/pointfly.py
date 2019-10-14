@@ -116,9 +116,9 @@ def batch_distance_matrix(A):
 # A shape is (N, P_A, C), B shape is (N, P_B, C)
 # D shape is (N, P_A, P_B)
 def batch_distance_matrix_general(A, B):
-    r_A = tf.reduce_sum(A * A, axis=2, keep_dims=True)
-    r_B = tf.reduce_sum(B * B, axis=2, keep_dims=True)
-    m = tf.matmul(A, tf.transpose(B, perm=(0, 2, 1)))
+    r_A = tf.math.reduce_sum(A * A, axis=2, keepdims=True)
+    r_B = tf.math.reduce_sum(B * B, axis=2, keepdims=True)
+    m = tf.linalg.matmul(A, tf.transpose(B, perm=(0, 2, 1)))
     D = r_A - 2 * m + tf.transpose(r_B, perm=(0, 2, 1))
     return D
 
@@ -127,7 +127,7 @@ def batch_distance_matrix_general(A, B):
 def find_duplicate_columns(A):
     N = A.shape[0]
     P = A.shape[1]
-    indices_duplicated = np.fill((N, 1, P), 1, dtype=np.int32)
+    indices_duplicated = np.full((N, 1, P), 1, dtype=np.int32)
     for idx in range(N):
         _, indices = np.unique(A[idx], return_index=True, axis=0)
         indices_duplicated[idx, :, indices] = 0
@@ -136,7 +136,7 @@ def find_duplicate_columns(A):
 
 # add a big value to duplicate columns
 def prepare_for_unique_top_k(D, A):
-    indices_duplicated = tf.py_func(find_duplicate_columns, [A], tf.int32)
+    indices_duplicated = tf.py_function(find_duplicate_columns, [A], tf.int32)
     D += tf.reduce_max(D)*tf.cast(indices_duplicated, tf.float32)
 
 
@@ -152,6 +152,7 @@ def knn_indices(points, k, sort=True, unique=True):
     distances, point_indices = tf.nn.top_k(-D, k=k, sorted=sort)
     batch_indices = tf.tile(tf.reshape(tf.range(batch_size), (-1, 1, 1, 1)), (1, point_num, k, 1))
     indices = tf.concat([batch_indices, tf.expand_dims(point_indices, axis=3)], axis=3)
+
     return -distances, indices
 
 
@@ -164,9 +165,13 @@ def knn_indices_general(queries, points, k, sort=True, unique=True):
     D = batch_distance_matrix_general(queries, points)
     if unique:
         prepare_for_unique_top_k(D, points)
-    distances, point_indices = tf.nn.top_k(-D, k=k, sorted=sort)  # (N, P, K)
+    distances, point_indices = tf.math.top_k(-D, k=k, sorted=sort)  # (N, P, K)
     batch_indices = tf.tile(tf.reshape(tf.range(batch_size), (-1, 1, 1, 1)), (1, point_num, k, 1))
     indices = tf.concat([batch_indices, tf.expand_dims(point_indices, axis=3)], axis=3)
+
+    qshape = queries.get_shape()  # (B, P, 3)
+    indices.set_shape((qshape[0], qshape[1], k, 2))
+
     return -distances, indices
 
 
