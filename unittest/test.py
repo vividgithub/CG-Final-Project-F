@@ -1,6 +1,8 @@
 from unittest import TestCase, main
 import utils.datasetutil as du
 import random
+import tensorflow as tf
+import ops
 import numpy as np
 import math
 
@@ -174,6 +176,31 @@ class DatasetTransformTestCase(PointSynthesisTestCase):
                 print("hashes_.size={}, hashes_={}".format(len(hashes_), hashes_))
                 self.assertTrue(hashes.issuperset(hashes_))
 
+
+class FixedRadiusTestCase(PointSynthesisTestCase):
+    def test_fixed_radius_search_sphere(self):
+        configs = [
+            (32, 2048, 0.12),
+            (24, 4096, 0.07),
+            (24, 1000, 0.15)
+        ]
+        for num_batch, num_points, radius in configs:
+            print(f"=========================({num_batch}x{num_points},({radius})=========================")
+            points = tf.random.uniform((num_batch, num_points, 3), minval=0, maxval=1.0, dtype=tf.float32)
+            stacked_points = tf.reshape(points, (-1, 3))
+            points_row_splits = tf.range(0, num_batch * num_points + 1, num_points)
+            points_lengths = points_row_splits[1:] - points_row_splits[:-1]
+
+            neighbor, row_splits = ops.fixed_radius_search(stacked_points, stacked_points, points_row_splits,
+                                                           points_row_splits, radius, 100)
+            lengths = row_splits[1:] - row_splits[:-1]
+            neighbor_checked = ops._batch_ordered_neighbors(stacked_points, stacked_points, points_lengths,
+                                                           points_lengths, radius)
+            for i in range(num_batch * num_points):
+                print(i, end="\n" if i % 500 == 0 and i != 0 else " ")
+                self.assertTrue(tf.reduce_all(neighbor[row_splits[i]: row_splits[i] + lengths[i]]
+                                              == neighbor_checked[i][:lengths[i]]))
+                self.assertTrue(np.all(neighbor_checked[i][lengths[i]:] == num_points * num_batch))
 
 if __name__ == "__main__":
     main()

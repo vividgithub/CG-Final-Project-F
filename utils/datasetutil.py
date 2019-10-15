@@ -3,6 +3,7 @@ from os import path
 import h5py
 from logger import log
 from utils import ioutil
+from utils.confutil import register_conf, object_from_conf
 
 
 def apply_transforms(dataset, confs, batch_size):
@@ -13,15 +14,6 @@ def apply_transforms(dataset, confs, batch_size):
     :param batch_size: The batch size to batch the dataset
     :return: A new dataset after transform
     """
-    transform_map = {
-        "shuffle": (lambda d, conf: d.shuffle(buffer_size=batch_size * conf.get("buffer_multiplier", 10))),
-        "repeat": (lambda d, _: d.repeat()),
-        "clip-feature": (lambda d, conf: d.map(transform_clip_feature(**conf))),
-        "sampling": (lambda d, conf: d.map(transform_sampling(**conf))),
-        "scaling": (lambda d, conf: d.map(transform_scaling(**conf))),
-        "rotation": (lambda d, conf: d.map(transform_rotation(**conf)))
-    }
-
     # Per point cloud instance transform
     pre_batch_confs = confs
     post_batch_confs = []
@@ -34,17 +26,18 @@ def apply_transforms(dataset, confs, batch_size):
         pass
 
     log("Origin dataset={}".format(dataset))
+    context = {"batch_size": batch_size}
     for conf in pre_batch_confs:
-        assert transform_map.get(conf["name"]), "Unable to find the transform \"{}\"".format(conf["name"])
-        dataset = transform_map[conf["name"]](dataset, conf)
+        transform = object_from_conf(conf, scope="transform", context=context)
+        dataset = transform(dataset)
         log("After pre-batch transform \"{}\" with conf={}, dataset={}".format(conf["name"], conf, dataset))
 
     dataset = dataset.batch(batch_size)
     log("Batch transform, dataset={}".format(dataset))
 
     for conf in post_batch_confs:
-        assert transform_map.get(conf["name"]), "Unable to find the transform \"{}\"".format(conf["name"])
-        dataset = transform_map[conf["name"]](dataset, conf)
+        transform = object_from_conf(conf, scope="transform", context=context)
+        dataset = transform(dataset)
         log("After post-batch transform \"{}\" with conf={}, dataset={}".format(conf["name"], conf, dataset))
 
     return dataset
@@ -107,7 +100,7 @@ def load_dataset(dir, model_conf):
     Load a dataset from a specified directory
     :param dir: The directory of the dataset, make sure that it has a "conf.pyconf" file
     :param model_conf: The configuration dictionary of model
-    :return: A tuple (dataset, dict) where dict is the configuration
+    :return: A tuple (train_dataset, test_dataset, conf) where conf is the data configuration
     """
     loaders = {
         "dataset-h5": load_dataset_h5
@@ -131,13 +124,13 @@ def load_dataset(dir, model_conf):
 
 def dataset_transform(func):
     """
-    The dataset transform function decorator that prints transform functino info
-    :param func: The function that needs to decorate
-    :return: The decorated function
+    This decorator accepts a dataset transform function "lambda dataset: ..." and print info
+    :param func: The dataset transform function, which should accepts an dataset and output a dataset
+    :return: func itself
     """
     def _func(*args, **kwargs):
         log(
-            "Generating dataset transform \"{}({}{})\"".format(
+            "Generating dataset map transform \"{}({}{})\"".format(
                 func.__name__,
                 ",".join([str(arg) for arg in args]) + (", " if len(args) > 0 else ""),
                 ",".join([str(key) + "=" + str(value) for key, value in kwargs.items()])
@@ -147,7 +140,26 @@ def dataset_transform(func):
     return _func
 
 
-@dataset_transform
+def dataset_map_transform(func):
+    """
+    This decorator converts a transform function to a dataset map callable lambda and print info
+    :param func: The map function that needs to decorate
+    :return: A mapper, which mapper(dataset) = dataset.map(some_function)
+    """
+    def _func(*args, **kwargs):
+        log(
+            "Generating dataset map transform \"{}({}{})\"".format(
+                func.__name__,
+                ",".join([str(arg) for arg in args]) + (", " if len(args) > 0 else ""),
+                ",".join([str(key) + "=" + str(value) for key, value in kwargs.items()])
+            )
+        )
+        return lambda dataset: dataset.map(func(*args, **kwargs))
+    return _func
+
+
+@register_conf(name="clip-feature", scope="transform", conf_func="self")
+@dataset_map_transform
 def transform_clip_feature(c=3, **kwargs):
     """
     Given an input with NxF point features, extract the first "c" features and discard the left
@@ -157,7 +169,8 @@ def transform_clip_feature(c=3, **kwargs):
     return lambda points, label: (points[:, :c, ...], label)
 
 
-@dataset_transform
+@register_conf(name="sampling", scope="transform", conf_func="self")
+@dataset_map_transform
 def transform_sampling(sample_num, policy="random-gauss", range=None, stddev=None, **kwargs):
     """
     Given an input with BxNxF point features, random sampling the point cloud
@@ -235,25 +248,32 @@ def transform_sampling(sample_num, policy="random-gauss", range=None, stddev=Non
         assert False, "Policy \"{}\" is unsupported"
 
 
-@dataset_transform
-def transform_scaling(range=(0.0, 0.05), **kwargs):
+@register_conf(name="scaling", scope="transform", conf_func="self")
+@dataset_map_transform
+def transform_scaling(range=(0.0, 0.05), anisotropic=True, **kwargs):
     """
     Given an input of NxF, random scaling the coordinate. That is, transform the first 3 features but remains the
     other features unchanged
     :param range: The random scaling range
+    :param anisotropic: Whether to use different scale factor for each axis
     :return: A function (NxF, _) -> (NxF, _), where the return point features have been transformed.
     "_" indicates the label input will remain unchanged.
     """
+
     return lambda points, label: (
         tf.concat(
-            [points[..., :3] * tf.random.uniform((), minval=range[0], maxval=range[1]), points[..., 3:]],
+            [
+                points[..., :3] * tf.random.uniform((3, ) if anisotropic else (), minval=range[0], maxval=range[1]),
+                points[..., 3:]
+            ],
             axis=-1
         ),
         label
     )
 
 
-@dataset_transform
+@register_conf(name="rotation", scope="transform", conf_func="self")
+@dataset_map_transform
 def transform_rotation(policy, range, **kwargs):
     """
     Given an input of NxF, random rotate the coordinate. That is, transform the first 3 features but maintain the others.
@@ -264,25 +284,6 @@ def transform_rotation(policy, range, **kwargs):
     :return: A function (NxF, _) -> (NxF, _), where the return point features have been transformed.
     "_" indicates the label input will remain unchanged.
     """
-    # def _transform_rotation(points, policy, range):
-    #     if policy == "euler":
-    #         mat = transforms3d.euler.euler2mat(
-    #             random.uniform(range[0][0], range[0][1]),
-    #             random.uniform(range[1][0], range[1][1]),
-    #             random.uniform(range[2][0], range[2][1])
-    #         )
-    #
-    #         points = points.numpy()
-    #         return np.concatenate(
-    #             [np.matmul(mat, points[:, :3, np.newaxis])[..., 0], points[:, 3:]],
-    #             axis=-1
-    #         )
-    #     else:
-    #         assert False, "Quaternion is currently not supported"
-    #
-    # _transform_rotation_closoure = lambda points, label: (_transform_rotation(points, policy, range), label)
-    # return lambda points, label: tf.py_function(_transform_rotation_closoure, inp=[points, label], Tout=(tf.float32, tf.int64))
-
     def _transform_rotation_euler(points, label):
         rx = tf.random.uniform((), minval=range[0][0], maxval=range[0][1])
         ry = tf.random.uniform((), minval=range[1][0], maxval=range[1][1])
@@ -323,3 +324,27 @@ def transform_rotation(policy, range, **kwargs):
 
     if policy == "euler":
         return _transform_rotation_euler
+
+
+@register_conf(name="shuffle", scope="transform", conf_func="self")
+@dataset_transform
+def transform_shuffle(batch_size, buffer_multiplier=4, **kwargs):
+    """
+    A wrapper for dataset shuffle
+    :param batch_size: The provided batch size
+    :param buffer_multiplier: A multiplier to the batch size.
+    The shuffle the buffer size is equal to "batch_size * buffer_multiplier"
+    :return: A transform function
+    """
+
+    return lambda dataset: dataset.shuffle(buffer_size=batch_size * buffer_multiplier)
+
+
+@register_conf(name="repeat", scope="transform", conf_func="self")
+@dataset_transform
+def transform_repeat(**kwargs):
+    """
+    A wrapper for dataset repeat
+    :return: A transform function
+    """
+    return lambda dataset: dataset.repeat()

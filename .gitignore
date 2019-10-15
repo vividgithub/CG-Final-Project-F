@@ -3,6 +3,17 @@
 /test.ipynb
 script/temp/
 
+# Libaries
+ops/*
+
+# Cmake
+cpp/CMakeSettings.json
+cpp/cmake-build-release
+cpp/cmake-build-debug
+cpp/out
+cpp/.idea
+cpp/.vs
+
 # Jetbrains
 .idea/
 
