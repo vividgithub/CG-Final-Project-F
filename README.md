@@ -1,6 +1,6 @@
-- # CG Project F 大作业
+# CG Project F 大作业
 
-  
+[TOC]
 
 ## 安装
 
@@ -157,3 +157,9 @@ print(type(my_awesome_layer)) # MyAwesomeLayer
 ```
 
 更详细的用法可以参考`PointCNN`其中的实现代码
+
+#### Dataset地址
+
+- Version 1:https://pan.baidu.com/s/14Om_iLZLOr3XgBYfbROfYg
+  - 仅仅包含ModelNet40-2048
+
