@@ -5,7 +5,7 @@ from utils import ioutil
 from os.path import expanduser, abspath, isdir, exists
 from os.path import join as join
 from os import getcwd as cwd
-from os import listdir, sep
+from os import listdir, sep, makedirs
 
 from utils.datasetutil import load_dataset
 from utils.modelutil import ModelRunner
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     try:
         data_dir = scan_data_dirs[0]
         root_data_dir = parse_path(data_dir, "..")
-        log(f"✔️ {root_data_dir}")
+        log(f"✅️ {root_data_dir}")
     except IndexError:
         log(f"❌ Cannot find the data directory")
         exit(1)
@@ -89,6 +89,8 @@ if __name__ == "__main__":
         if exists(root_save_dir) and not isdir(root_save_dir):
             log(f"Path \"{root_save_dir}\" is not a directory", color="red")
             exit(1)
+        elif not exists(root_save_dir):
+            makedirs(root_save_dir)
 
     # Get the data conf
     train_dataset, test_dataset, data_conf = load_dataset(data_dir, model_conf)
