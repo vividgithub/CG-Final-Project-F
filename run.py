@@ -89,16 +89,21 @@ if __name__ == "__main__":
         if exists(root_save_dir) and not isdir(root_save_dir):
             log(f"Path \"{root_save_dir}\" is not a directory", color="red")
             exit(1)
-        elif not exists(root_save_dir):
-            makedirs(root_save_dir)
+
+    # Create the model save directory if needed
+    save_dir = parse_path(root_save_dir, dataset_name)
+    makedirs(save_dir, exist_ok=True)
 
     # Get the data conf
     train_dataset, test_dataset, data_conf = load_dataset(data_dir, model_conf)
 
     # Initialize the ModelRunner
-    model_name = "".join([x.capitalize() for x in model_conf_path.split(sep)[-1].split("_")])
+    model_name = model_conf_path.split(sep)[-1]  # Get the last component of the path
+    model_name = model_name[:model_name.rfind(".")]  # Remove the .pyconf
+    model_name = "".join([x.capitalize() for x in model_name.split("_")])  # Move lower case to camel case
+
     log(f"Model name: {model_name}")
-    model_runner = ModelRunner(model_conf, data_conf, model_name, root_save_dir, train_dataset, test_dataset)
+    model_runner = ModelRunner(model_conf, data_conf, model_name, save_dir, train_dataset, test_dataset)
 
     log("Running model")
     model_runner.train()
