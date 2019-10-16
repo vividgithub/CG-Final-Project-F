@@ -6,7 +6,7 @@
 
 ### 安装需求
 
-- 在安装之前请确认使用`python 3.5`或者`python 3.6`的版本运行。**同时安装`tensorflow 2.0.0`和`tensorflow-gpu 2.0.0`**。本代码并不支持`tensforlow 1.x`的版本，请注意。如果没有安装，可以使用`pip`进行安装
+- 在安装之前请确认使用`python 3.4-3.7`的版本运行。**同时安装`tensorflow 2.0.0`和`tensorflow-gpu 2.0.0`**。本代码并不支持`tensforlow 1.x`的版本，请注意。如果没有安装，可以使用`pip`进行安装
 
 ```shell
 pip install numpy
@@ -138,11 +138,12 @@ python3 CG-Final-Project-F/run.py conf/modelnet40/point_cnn.pyconf
 
 ```python
 from utils.confutil import register_conf, object_from_conf
+import tensorflow as tf
 
 @register_conf(name="layer-myawesomelayer", scope="layer", conf_func="self")
 class MyAwesomeLayer(tf.keras.layer.Layer):
   # 注意我们一般要使用**kwargs来避免额外的参数
-  def __init__(self, key, value1, value2, value2, **kwargs):
+  def __init__(self, key, value1, value2, **kwargs):
     ...
     
 conf = {
