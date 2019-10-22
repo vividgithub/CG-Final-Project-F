@@ -18,7 +18,7 @@ def pyconf(filepath):
             c = g
             for ref in ref_path:
                 # We only support the indexing of dictionary and list (including tuple)
-                c = g[ref] if type(g) is dict else g[int(ref)]
+                c = c[ref] if type(c) is dict else c[int(ref)]
             return c
         elif type(c) is str and c.startswith("$"):  # Evaluation parameter
             return eval(c[1:])

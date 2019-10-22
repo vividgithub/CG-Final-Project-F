@@ -285,8 +285,6 @@ def kpconv(query_points,
 
     :return: output_features float32[n_points, out_fdim]
     """
-    print("KPConv: fixed={}, KP_extent={}, KP_influence={}, aggregation_mode={}".format(fixed, KP_extent, KP_influence, aggregation_mode))
-
     # Initial kernel extent for this layer
     K_radius = 1.5 * KP_extent
 

@@ -8,6 +8,8 @@ from utils.confutil import object_from_conf, register_conf
 
 # A fake call to register
 register_conf(name="adam", scope="optimizer", conf_func=lambda conf: tf.keras.optimizers.Adam(**conf))(None)
+register_conf(name="sgd", scope="optimizer", conf_func=lambda conf: tf.keras.optimizers.SGD(**conf))(None)
+
 register_conf(name="exponential_decay", scope="learning_rate",
               conf_func=lambda conf: tf.keras.optimizers.schedules.ExponentialDecay(**conf))(None)
 
@@ -81,11 +83,13 @@ def net_from_config(model_conf, data_conf):
     # Extend feature layer
     extend_feature_layer = None
     if "extend_feature" in net_conf:
-        if net_conf["extend_feature"] == "none":
-            pass
-        else:
-            # TODO: Extend feature
-            assert False, "Other extend feature not implemented"
+        extend_feature_conf = net_conf["extend_feature"]
+
+        # Legacy configuration, use only a single str like "one" or "none"
+        if isinstance(extend_feature_conf, str):
+            extend_feature_conf = {"method": extend_feature_conf}
+        extend_feature_layer = object_from_conf(extend_feature_conf, scope="layer",
+                                                context={"name": "input-feature-extend"})
 
     if net_conf["structure"] == "sequence":
         x = inputs = tf.keras.Input(shape=(point_count, feature_size))  # Input layer
@@ -93,11 +97,15 @@ def net_from_config(model_conf, data_conf):
 
         # Add extend feature layer
         if extend_feature_layer:
+            logger.log(f"In extending features")
             x = extend_feature_layer(x)
 
         for layer_conf in net_conf["layers"]:
+            logger.log(f"In constructing: {layer_conf}")
             layer = layer_from_config(layer_conf, model_conf, data_conf)
+            logger.log(f"Input={x}")
             x = layer(x)
+            logger.log(f"Output={x}")
 
         outputs = x
         return tf.keras.Model(inputs=inputs, outputs=outputs)
@@ -149,6 +157,8 @@ class ModelRunner:
             train_dataset = self.train_dataset.map(transform_func)
             test_dataset = self.test_dataset
             logger.log("Convert classification to segmentation task with output_size={}".format(seg_output_size))
+        else:
+            train_dataset, test_dataset = self.train_dataset, self.test_dataset
 
         # Get the network
         logger.log("Creating network, train_dataset={}, test_dataset={}".format(self.train_dataset, self.test_dataset))

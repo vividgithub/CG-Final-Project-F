@@ -18,6 +18,7 @@ class GridSamplingLayer(tf.keras.layers.Layer):
         :param dl: The grid size for sampling
         :param label: An optional label for the layer
         """
+        super(GridSamplingLayer, self).__init__(name=label)
         self.dl = dl
 
     def call(self, inputs, *args, **kwargs):

@@ -36,7 +36,7 @@ class PoolingLayer(tf.keras.layers.Layer):
         points, features, neighbor_indices = inputs[0], inputs[1], inputs[2]
 
         # Gather and reduce
-        neighbor_features = tf.gather(features, neighbor_indices)  # (N, (neighbor), F)
+        neighbor_features = tf.gather(features, neighbor_indices)  # (N', (neighbor), F)
         output_features = self.reduce_op(neighbor_features, axis=1)
 
         return output_features
@@ -62,5 +62,5 @@ class GlobalPoolingLayer(tf.keras.layers.Layer):
         # points: (B, (N), 3)
         # features: (B, (N), F)
         # output_features: (B, F)
-        features = inputs[1]
-        return self.reduce_op(features, axis=1)
+        points, features = inputs[0], inputs[1]
+        return points, self.reduce_op(features, axis=1)

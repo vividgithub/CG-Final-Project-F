@@ -97,7 +97,7 @@
         "test_load_policy": "normal",
         "train_transforms": [
             {"name": "repeat"},
-            {"name": "shuffle", "buffer_multiplier": 10},
+            {"name": "shuffle", "buffer_multiplier": 32},
             {"name": "clip-feature", "c": 3},
             {"name": "scaling", "range": (0.9, 1.1), "anisotropic": True},
             "------------",
@@ -120,15 +120,15 @@
                 "conv": {"name": "conv-kp", "k": 15, "extent": 0.02},
                 "momentum": "@_/momentum"
             },
-            {
-                "name": "block-res",
-                "label": "res-bottle-1-2",
-                "structure": "bottleneck",
-                "channel": 128,
-                "neighbor": {"name": "neighbor-fixed", "radius": 0.05, "limit": 7},
-                "conv": {"name": "conv-kp", "k": 15, "extent": 0.02},
-                "momentum": "@_/momentum"
-            },
+            # {
+            #     "name": "block-res",
+            #     "label": "res-bottle-1-2",
+            #     "structure": "bottleneck",
+            #     "channel": 128,
+            #     "neighbor": {"name": "neighbor-fixed", "radius": 0.05, "limit": 7},
+            #     "conv": {"name": "conv-kp", "k": 15, "extent": 0.02},
+            #     "momentum": "@_/momentum"
+            # },
             {
                 "name": "block-res",
                 "label": "res-bottle-stride-1-3",
@@ -137,78 +137,82 @@
                 "neighbor": {"name": "neighbor-fixed", "radius": 0.05, "limit": 7},
                 "conv": {"name": "conv-kp", "k": 15, "extent": 0.02},
                 "sampling": {"name": "sampling-grid", "dl": 0.04},
+                "pooling": "max",
                 "momentum": "@_/momentum"
             },
-            #------------------------------------------------------------------
-            {
-                "name": "block-res",
-                "label": "res-bottle-2-1",
-                "structure": "bottleneck",
-                "channel": 256,
-                "neighbor": {"name": "neighbor-fixed", "radius": 0.1, "limit": 21},
-                "conv": {"name": "conv-kp", "k": 15, "extent": 0.04},
-                "momentum": "@_/momentum"
-            },
-            {
-                "name": "block-res",
-                "label": "res-bottle-stride-2-2",
-                "structure": "bottleneck-stride",
-                "channel": 256,
-                "neighbor": {"name": "neighbor-fixed", "radius": 0.1, "limit": 21},
-                "conv": {"name": "conv-kp", "k": 15, "extent": 0.04},
-                "sampling": {"name": "sampling-grid", "dl": 0.08},
-                "momentum": "@_/momentum"
-            },
-            #------------------------------------------------------------------
-            {
-                "name": "block-res",
-                "label": "res-bottle-3-1",
-                "structure": "bottleneck",
-                "channel": 512,
-                "neighbor": {"name": "neighbor-fixed", "radius": 0.2, "limit": 37},
-                "conv": {"name": "conv-kp", "k": 15, "extent": 0.08},
-                "momentum": "@_/momentum"
-            },
-            {
-                "name": "block-res",
-                "label": "res-bottle-stride-3-2",
-                "structure": "bottleneck-stride",
-                "channel": 512,
-                "neighbor": {"name": "neighbor-fixed", "radius": 0.2, "limit": 37},
-                "conv": {"name": "conv-kp", "k": 15, "extent": 0.08},
-                "sampling": {"name": "sampling-grid", "dl": 0.16},
-                "momentum": "@_/momentum"
-            },
-            #------------------------------------------------------------------
-            {
-                "name": "block-res",
-                "label": "res-bottle-4-1",
-                "structure": "bottleneck",
-                "channel": 1024,
-                "neighbor": {"name": "neighbor-fixed", "radius": 0.4, "limit": 40},
-                "conv": {"name": "conv-kp", "k": 15, "extent": 0.16},
-                "momentum": "@_/momentum"
-            },
-            {
-                "name": "block-res",
-                "label": "res-bottle-stride-4-2",
-                "structure": "bottleneck-stride",
-                "channel": 1024,
-                "neighbor": {"name": "neighbor-fixed", "radius": 0.4, "limit": 40},
-                "conv": {"name": "conv-kp", "k": 15, "extent": 0.16},
-                "sampling": {"name": "sampling-grid", "dl": 0.32},
-                "momentum": "@_/momentum"
-            },
-            #------------------------------------------------------------------
-            {
-                "name": "block-res",
-                "label": "res-bottle-5-1",
-                "structure": "bottleneck",
-                "channel": 2048,
-                "neighbor": {"name": "neighbor-fixed", "radius": 0.8, "limit": 35},
-                "conv": {"name": "conv-kp", "k": 15, "extent": 0.32},
-                "momentum": "@_/momentum"
-            },
+            # #------------------------------------------------------------------
+            # {
+            #     "name": "block-res",
+            #     "label": "res-bottle-2-1",
+            #     "structure": "bottleneck",
+            #     "channel": 256,
+            #     "neighbor": {"name": "neighbor-fixed", "radius": 0.1, "limit": 21},
+            #     "conv": {"name": "conv-kp", "k": 15, "extent": 0.04},
+            #     "momentum": "@_/momentum"
+            # },
+            # {
+            #     "name": "block-res",
+            #     "label": "res-bottle-stride-2-2",
+            #     "structure": "bottleneck-stride",
+            #     "channel": 256,
+            #     "neighbor": {"name": "neighbor-fixed", "radius": 0.1, "limit": 21},
+            #     "conv": {"name": "conv-kp", "k": 15, "extent": 0.04},
+            #     "sampling": {"name": "sampling-grid", "dl": 0.08},
+            #     "pooling": "max",
+            #     "momentum": "@_/momentum"
+            # },
+            # #------------------------------------------------------------------
+            # {
+            #     "name": "block-res",
+            #     "label": "res-bottle-3-1",
+            #     "structure": "bottleneck",
+            #     "channel": 512,
+            #     "neighbor": {"name": "neighbor-fixed", "radius": 0.2, "limit": 37},
+            #     "conv": {"name": "conv-kp", "k": 15, "extent": 0.08},
+            #     "momentum": "@_/momentum"
+            # },
+            # {
+            #     "name": "block-res",
+            #     "label": "res-bottle-stride-3-2",
+            #     "structure": "bottleneck-stride",
+            #     "channel": 512,
+            #     "neighbor": {"name": "neighbor-fixed", "radius": 0.2, "limit": 37},
+            #     "conv": {"name": "conv-kp", "k": 15, "extent": 0.08},
+            #     "sampling": {"name": "sampling-grid", "dl": 0.16},
+            #     "pooling": "max",
+            #     "momentum": "@_/momentum"
+            # },
+            # #------------------------------------------------------------------
+            # {
+            #     "name": "block-res",
+            #     "label": "res-bottle-4-1",
+            #     "structure": "bottleneck",
+            #     "channel": 1024,
+            #     "neighbor": {"name": "neighbor-fixed", "radius": 0.4, "limit": 40},
+            #     "conv": {"name": "conv-kp", "k": 15, "extent": 0.16},
+            #     "momentum": "@_/momentum"
+            # },
+            # {
+            #     "name": "block-res",
+            #     "label": "res-bottle-stride-4-2",
+            #     "structure": "bottleneck-stride",
+            #     "channel": 1024,
+            #     "neighbor": {"name": "neighbor-fixed", "radius": 0.4, "limit": 40},
+            #     "conv": {"name": "conv-kp", "k": 15, "extent": 0.16},
+            #     "sampling": {"name": "sampling-grid", "dl": 0.32},
+            #     "pooling": "max",
+            #     "momentum": "@_/momentum"
+            # },
+            # #------------------------------------------------------------------
+            # {
+            #     "name": "block-res",
+            #     "label": "res-bottle-5-1",
+            #     "structure": "bottleneck",
+            #     "channel": 2048,
+            #     "neighbor": {"name": "neighbor-fixed", "radius": 0.8, "limit": 35},
+            #     "conv": {"name": "conv-kp", "k": 15, "extent": 0.32},
+            #     "momentum": "@_/momentum"
+            # },
             {"name": "pooling-global", "label": "global-pooling", "method": "average"},
             #------------------------------------------------------------------
             {"name": "feature-reshape", "label": "feature-reshape", "channels": [1024], "dropout": [0.5]},

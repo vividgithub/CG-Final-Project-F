@@ -21,10 +21,13 @@ def unpack_ragged(x, name=None):
         assert tf.is_tensor(x), f"Unexpected type type(x)={type(x)}, expected: Tensor or RaggedTensor"
 
         # Handle tensor
-        x_shape = tf.shape(x)
-        b, n = x_shape[0], x_shape[1]
-        x_ = tf.reshape(x, (b * n, -1))
-        row_splits = tf.range(0, b * n + 1, n)
+        f = x.shape[2] if x.shape[2] is not None else tf.shape(x)[2]
+        x_ = tf.reshape(x, (-1, f))
+
+        b = x.shape[0] if x.shape[0] is not None else tf.shape(x)[0]
+        n = x.shape[1] if x.shape[1] is not None else tf.shape(x)[1]
+        row_splits = tf.range(0, b + 1) * n  # [0, n, ..., b * n]
+
         return x_, row_splits
 
 
@@ -143,6 +146,7 @@ class ResBlock(ComposeLayer):
         :param momentum: The momentum for batch normalization
         :param label: An optional label for this layer
         """
+        # FIXME: Weight decay and leaky relu
         super(ResBlock, self).__init__(name=label)
 
         assert structure in [ResBlock._NORMAL, ResBlock._BOTTLENECK, ResBlock._BOTTLENECK_STRIDE, ResBlock._SIMPLE], \
@@ -157,7 +161,7 @@ class ResBlock(ComposeLayer):
         self.conv_layer = conv_layer
         self.sampling_layer = sampling_layer
         self.pooling_layer = pooling_layer
-        self.activation = activation or "leaky_relu"
+        self.activation = activation or "relu"
         self.bn_momentum = momentum
 
     def should_sampling(self):
@@ -184,10 +188,7 @@ class ResBlock(ComposeLayer):
         # and inject the channel context to the convolution layer
         return ResBlock(
             neighbor_layer=object_from_conf(conf["neighbor"], scope="layer"),
-            conv_layer=object_from_conf(
-                {channel: channel_for_conv, **conf["conv"]},
-                scope="layer"
-            ),
+            conv_layer=object_from_conf(conf["conv"], scope="layer", context={"channel": channel_for_conv}),
             sampling_layer=object_from_conf(conf["sampling"], scope="layer") if "sampling" in conf else None,
             pooling_layer=PoolingLayer(method=conf["pooling"]) if "pooling" in conf else None,
             **{k: v for k, v in conf.items() if k not in ["neighbor", "conv", "sampling", "pooling"]}
@@ -203,7 +204,8 @@ class ResBlock(ComposeLayer):
 
         def unary_conv(name, x, fdim, activated, normalized):
             with tf.name_scope(name):
-                x = self.add_layer(name + "-Dense", tf.keras.layers.Dense, fdim, activation=None)(x, *args, **kwargs)
+                x = self.add_layer(name + "-Dense", tf.keras.layers.Dense, fdim, use_bias=False,
+                                   activation=None)(x, *args, **kwargs)
                 x = self.add_layer(name + "-BN", tf.keras.layers.BatchNormalization,
                                    momentum=self.bn_momentum)(x, *args, **kwargs) if normalized else x
                 x = self.add_layer(name + "-Activation", tf.keras.layers.Activation,
@@ -214,28 +216,32 @@ class ResBlock(ComposeLayer):
         # features: (B, (N), F)
         points, features = inputs[0], inputs[1]
 
-        # Stack the inputs
-        points, row_splits = unpack_ragged(points, name="UnpackPoints")
-        features, _ = unpack_ragged(features, name="UnpackFeatures")
+        with tf.name_scope("Preparation"):
+            # Stack the inputs
+            with tf.name_scope("UnpackInput"):
+                points, row_splits = unpack_ragged(points, name="UnpackPoints")
+                features, _ = unpack_ragged(features, name="UnpackFeatures")
 
-        # Determine the output_points (N', 3)
-        # For convolution, it should equal to the points.
-        # For stride-based structure, it will use sampling to get the output
-        # output_points: (N', 3)
-        # output_row_splits: (N', 3)
-        if not self.should_sampling():
-            output_points, output_row_splits = points, row_splits
-        else:
-            output_points, output_row_splits = self.sampling_layer(points, row_splits, *args, **kwargs)
+            # Determine the output_points (N', 3)
+            # For convolution, it should equal to the points.
+            # For stride-based structure, it will use sampling to get the output
+            # output_points: (N', 3)
+            # output_row_splits: (N', 3)
+            if not self.should_sampling():
+                output_points, output_row_splits = points, row_splits
+            else:
+                with tf.name_scope("Sampling"):
+                    output_points, output_row_splits = self.sampling_layer([points, row_splits], *args, **kwargs)
 
-        # Now we can get the neighbor information
-        neighbor_indices = self.neighbor_layer(points, row_splits, output_points, output_row_splits, *args, **kwargs)
+            # Now we can get the neighbor information
+            with tf.name_scope("Neighbor"):
+                neighbor_indices = self.neighbor_layer([points, row_splits, output_points, output_row_splits], *args, **kwargs)
 
         # Shortcut line
         shortcut = None
         if self.has_shortcut():
             with tf.name_scope("Shortcut"):
-                shortcut = self.pooling_layer(points, features, neighbor_indices, *args, **kwargs) \
+                shortcut = self.pooling_layer([points, features, neighbor_indices], *args, **kwargs) \
                     if self.should_sampling() else points  # (N', F)
                 shortcut = unary_conv("Shortcut-1x1-Conv", shortcut, self.channel,
                                       activated=False, normalized=True)  # (N', F')
@@ -246,18 +252,20 @@ class ResBlock(ComposeLayer):
             mainline = unary_conv("Pre-1x1-Conv", features, self.channel // 4, activated=True, normalized=True) \
                 if self.bottleneck() else features  # (N', F) for non-bottleneck or (N', F'/4)
             # Convolution
-            mainline = self.conv_layer(mainline, *args, **kwargs)  # (N', F') for non-bottleneck or (N', F'/4)
+            mainline = self.conv_layer([points, mainline, output_points, neighbor_indices], *args, **kwargs)  # (N', F') for non-bottleneck or (N', F'/4)
             # 1x1 convolution for bottleneck
             mainline = unary_conv("Post-1x1-Conv", mainline, self.channel, activated=False, normalized=True) \
                 if self.bottleneck() else mainline  # (N', F')
 
         # Add mainline and shortcut
-        output_features = mainline + shortcut if self.has_shortcut() else mainline  # (N', F')
-        # Final activation
-        output_features = self.add_layer("OutputActivation", tf.keras.layers.Activation,
-                                         self.activation)(output_features, *args, **kwargs)  # (N', F')
+        with tf.name_scope("Combine"):
+            output_features = mainline + shortcut if self.has_shortcut() else mainline  # (N', F')
+            # Final activation
+            output_features = self.add_layer("OutputActivation", tf.keras.layers.Activation,
+                                             self.activation)(output_features, *args, **kwargs)  # (N', F')
 
-        return (
-            tf.RaggedTensor(output_points, row_splits=output_row_splits),
-            tf.RaggedTensor(output_features, row_splits=output_row_splits)
-        )
+        with tf.name_scope("Output"):
+            return (
+                tf.RaggedTensor.from_row_splits(output_points, row_splits=output_row_splits, name="OutputPoints", validate=False),
+                tf.RaggedTensor.from_row_splits(output_features, row_splits=output_row_splits, name="OutputFeatures", validate=False)
+            )
