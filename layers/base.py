@@ -1,4 +1,5 @@
 import tensorflow as tf
+from utils.computil import ComputationContextLayer
 
 
 class ComposeLayer(tf.keras.layers.Layer):
@@ -8,6 +9,7 @@ class ComposeLayer(tf.keras.layers.Layer):
     def __init__(self, *args, **kwargs):
         super(ComposeLayer, self).__init__(*args, **kwargs)
         self.sub_layers = dict()
+        self._c = None
 
     def add_layer(self, name, layer_type, *args, **kwargs):
         """
@@ -19,5 +21,5 @@ class ComposeLayer(tf.keras.layers.Layer):
         :return: An instance of that layer
         """
         if self.sub_layers.get(name) is None:
-            self.sub_layers[name] = layer_type(*args, **kwargs)
+            self.sub_layers[name] = ComputationContextLayer(layer_type(*args, **kwargs))
         return self.sub_layers[name]

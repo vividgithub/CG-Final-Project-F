@@ -1,6 +1,6 @@
 # Computation Utility
-import tensorflow as tf
 from collections.abc import Iterable
+import logger
 
 
 def flatten(items):
@@ -11,6 +11,23 @@ def flatten(items):
                 yield sub_x
         else:
             yield x
+
+
+class ComputationContextLayer:
+    """
+    A mock for tf.keras.layer.Layer to let it only be called inside the computation context. This is
+    done by hiding the __call__ attribute and expose a "_call_by_computation_context" attribute
+    """
+    def __init__(self, layer):
+        self._layer = layer
+
+    def call_by_computation_context(self, *args, **kwargs):
+        return self._layer(*args, **kwargs)
+
+    def __call__(self, *args, **kwargs):
+        logger.log(f"Warning: calling computation context layer {self._layer} "
+                   f"with args: {args} kwargs: {kwargs} without using computation context", color="yellow")
+        return self.call_by_computation_context(*args, **kwargs)
 
 
 class ComputationContext:
@@ -32,13 +49,13 @@ class ComputationContext:
         :return: The outputs after the layer(s)
         """
         outputs = inputs
-        # if isinstance(layers, Iterable):
-        #     for layer in flatten(layers):
-        #         outputs = layer(outputs, *self.args, **self.kwargs)
-        # else:
-        #     outputs = layers(outputs)
+
         for layer in layers:
-            outputs = layer(outputs, *self.args, **self.kwargs)
+            if hasattr(layer, "call_by_computation_context"):
+                outputs = layer.call_by_computation_context(outputs, *self.args, **self.kwargs)
+            else:
+                outputs = layer(outputs, *self.args, **self.kwargs)
+
         return outputs
 
 
