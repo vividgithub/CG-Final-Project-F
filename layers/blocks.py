@@ -204,7 +204,7 @@ class ResBlock(ComposeLayer):
 
         def unary_conv(name, x, fdim, activated, normalized):
             with tf.name_scope(name):
-                x = self.add_layer(name + "-Dense", tf.keras.layers.Dense, fdim, use_bias=False,
+                x = self.add_layer(name + "-Conv", tf.keras.layers.Dense, fdim, use_bias=False,
                                    activation=None)(x, *args, **kwargs)
                 x = self.add_layer(name + "-BN", tf.keras.layers.BatchNormalization,
                                    momentum=self.bn_momentum)(x, *args, **kwargs) if normalized else x
@@ -251,18 +251,29 @@ class ResBlock(ComposeLayer):
             # 1x1 convolution for bottleneck
             mainline = unary_conv("Pre-1x1-Conv", features, self.channel // 4, activated=True, normalized=True) \
                 if self.bottleneck() else features  # (N', F) for non-bottleneck or (N', F'/4)
+
             # Convolution
-            mainline = self.conv_layer([points, mainline, output_points, neighbor_indices], *args, **kwargs)  # (N', F') for non-bottleneck or (N', F'/4)
-            # 1x1 convolution for bottleneck
+            with tf.name_scope("Main-Conv"):
+                mainline = self.conv_layer([points, mainline, output_points, neighbor_indices],
+                                           *args, **kwargs)  # (N', F') for non-bottleneck or (N', F'/4)
+                mainline = self.add_layer("Main-Conv-BN", tf.keras.layers.BatchNormalization,
+                                          momentum=self.bn_momentum)(mainline, *args, **kwargs)
+                mainline = self.add_layer("Main-Conv-Activation", tf.keras.layers.Activation,
+                                          self.activation)(mainline, *args, **kwargs)
+
+            # 1x1 convolution
             mainline = unary_conv("Post-1x1-Conv", mainline, self.channel, activated=False, normalized=True) \
                 if self.bottleneck() else mainline  # (N', F')
 
         # Add mainline and shortcut
-        with tf.name_scope("Combine"):
-            output_features = mainline + shortcut if self.has_shortcut() else mainline  # (N', F')
-            # Final activation
-            output_features = self.add_layer("OutputActivation", tf.keras.layers.Activation,
-                                             self.activation)(output_features, *args, **kwargs)  # (N', F')
+        if self.has_shortcut():
+            with tf.name_scope("Combine"):
+                output_features = mainline + shortcut if self.has_shortcut() else mainline  # (N', F')
+                # Final activation
+                output_features = self.add_layer("OutputActivation", tf.keras.layers.Activation,
+                                                 self.activation)(output_features, *args, **kwargs)  # (N', F')
+        else:
+            output_features = mainline
 
         with tf.name_scope("Output"):
             return (

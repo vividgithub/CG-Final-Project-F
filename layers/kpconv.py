@@ -2,6 +2,7 @@ import tensorflow as tf
 import logger
 from legacy.kpconv import kpconv_ops, load_kernels
 from utils.confutil import register_conf
+from ops import neighbor_aggregate_sum
 
 
 @register_conf(name="conv-kp", scope="layer", conf_func="self")
@@ -85,9 +86,8 @@ class KPConvLayer(tf.keras.layers.Layer):
         all_weights = tf.expand_dims(all_weights, axis=-1)  # (N'x(neighbor), k, 1)
 
         weighted_features = all_weights * neighbors_features  # (N'x(neighbor), k, F)
-        weighted_features = tf.reduce_sum(
-            tf.RaggedTensor.from_row_splits(weighted_features, neighbors_row_splits),
-            axis=1
+        weighted_features = neighbor_aggregate_sum(
+            tf.RaggedTensor.from_row_splits(weighted_features, neighbors_row_splits, validate=False),
         )  # (N'x(neighbor), k, F) --> (N', (neighbor), k, F) --> (N', k, F)
 
         # Apply network weights

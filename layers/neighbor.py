@@ -34,4 +34,4 @@ class FixedRadiusNeighborQuery(tf.keras.layers.Layer):
         neighbor_indices, indices_row_splits = ops.fixed_radius_search(output_points, points, output_row_splits,
                                                                        row_splits, radius=self.radius, limit=self.limit)
 
-        return tf.RaggedTensor.from_row_splits(neighbor_indices, indices_row_splits)
+        return tf.RaggedTensor.from_row_splits(neighbor_indices, indices_row_splits, validate=False)

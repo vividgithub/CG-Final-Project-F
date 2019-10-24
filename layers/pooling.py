@@ -1,12 +1,15 @@
 import tensorflow as tf
 from utils.confutil import register_conf
+from ops import neighbor_aggregate_max, neighbor_aggregate_mean, neighbor_aggregate_sum
 
 
 def _get_pooling_op_from_name(name):
     if name == "average" or name == "mean":
-        return tf.reduce_mean
+        return neighbor_aggregate_mean
     elif name == "max":
-        return tf.reduce_max
+        return neighbor_aggregate_max
+    elif name == "sum":
+        return neighbor_aggregate_sum
     else:
         assert False, f"Method \"{name}\" is not a correct pooling configuration"
 
@@ -37,7 +40,7 @@ class PoolingLayer(tf.keras.layers.Layer):
 
         # Gather and reduce
         neighbor_features = tf.gather(features, neighbor_indices)  # (N', (neighbor), F)
-        output_features = self.reduce_op(neighbor_features, axis=1)
+        output_features = self.reduce_op(neighbor_features)
 
         return output_features
 
@@ -63,4 +66,4 @@ class GlobalPoolingLayer(tf.keras.layers.Layer):
         # features: (B, (N), F)
         # output_features: (B, F)
         points, features = inputs[0], inputs[1]
-        return points, self.reduce_op(features, axis=1)
+        return points, self.reduce_op(features)

@@ -136,24 +136,29 @@ class FeatureReshapeLayer(tf.keras.layers.Layer):
         self.layers = []
 
         for channel_size, dropout_rate in zip(channels, dropout):
-            self.layers.append(tf.keras.layers.Dense(channel_size, activation=None))
+            ls = [tf.keras.layers.Dense(channel_size, activation=None)]
 
             # Apply batch normalization and activations
             bn_layer = tf.keras.layers.BatchNormalization(momentum=momentum)
             activation_layer = tf.keras.layers.Activation(activation=activation)
-            self.layers += [bn_layer, activation_layer] if bn_first else [activation_layer, bn_layer]
+            ls += [bn_layer, activation_layer] if self.bn_first else [activation_layer, bn_layer]
 
             # Apply dropout
             if dropout_rate > 0.0:
-                self.layers.append(tf.keras.layers.Dropout(dropout_rate))
+                ls.append(tf.keras.layers.Dropout(dropout_rate))
+
+            self.layers.append(ls)
 
     def count_params(self):
-        return sum([layer.count_params() for layer in self.layers])
+        return sum([layer.count_params() for ls in self.layers for layer in ls])
 
     def call(self, inputs, *args, **kwargs):
         c = ComputationContext(*args, **kwargs)
         p = inputs[0]  # p: (B, N, 3)
         f = inputs[1]  # f: (B, N, F)
-        f_ = c(self.layers, f)  # (B, N, F) -> (B, N, self.channels[-1])
 
-        return p, f_
+        for i, ls in enumerate(self.layers):
+            with tf.name_scope(f"Level-{i}"):
+                f = c(ls, f)
+
+        return p, f
