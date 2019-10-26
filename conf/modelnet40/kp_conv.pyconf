@@ -220,7 +220,7 @@
         ]
     },
     "control": {
-        "validation_step": 500,
+        "validation_step": 2000,
         "tensorboard_sync_step": 100,
         "train_epoch": 402,
         "batch_size": 16,

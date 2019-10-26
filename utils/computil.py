@@ -1,16 +1,18 @@
 # Computation Utility
+import tensorflow as tf
 from collections.abc import Iterable
 import logger
 
 
-def flatten(items):
-    """Yield items from any nested iterable; see Reference."""
-    for x in items:
-        if isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
-            for sub_x in flatten(x):
-                yield sub_x
-        else:
-            yield x
+def commonprefix(m):
+    """Given a list of pathnames, returns the longest common leading component"""
+    if not m: return ''
+    s1 = min(m)
+    s2 = max(m)
+    for i, c in enumerate(s1):
+        if c != s2[i]:
+            return s1[:i]
+    return s1
 
 
 class ComputationContextLayer:
@@ -48,13 +50,25 @@ class ComputationContext:
         :param inputs: The inputs
         :return: The outputs after the layer(s)
         """
-        outputs = inputs
-
-        for layer in layers:
-            if hasattr(layer, "call_by_computation_context"):
-                outputs = layer.call_by_computation_context(outputs, *self.args, **self.kwargs)
+        def call_layer(l, x):
+            if hasattr(l, "call_by_computation_context"):
+                return l.call_by_computation_context(x, *self.args, **self.kwargs)
             else:
-                outputs = layer(outputs, *self.args, **self.kwargs)
+                return l(x, *self.args, **self.kwargs)
+
+        if not isinstance(layers, (list, tuple)):
+            # Single layer, just call
+            return call_layer(layers, inputs)
+        else:
+            # Flatten the layers
+            layers = tf.nest.flatten(layers)
+            outputs = inputs
+
+            # Add a name scope for wrapping
+            scope_name = commonprefix([layer.name for layer in layers]).strip("-/\\?_ \t\n") or "ComputationContext"
+            with tf.name_scope(scope_name):
+                for l in layers:
+                    outputs = call_layer(l, outputs)
 
         return outputs
 
