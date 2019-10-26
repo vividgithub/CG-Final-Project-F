@@ -1,6 +1,7 @@
 from utils.computil import ComputationContext
 import tensorflow as tf
 from utils.confutil import register_conf
+from layers.base import ComposeLayer
 
 
 @register_conf(name="input-feature-extend", scope="layer", conf_func="self")
@@ -112,11 +113,12 @@ class OutputConditionalSegmentationLayer(tf.keras.layers.Layer):
 
 
 @register_conf(name="feature-reshape", scope="layer", conf_func="self")
-class FeatureReshapeLayer(tf.keras.layers.Layer):
+class FeatureReshapeLayer(ComposeLayer):
     """
     A feature resize layer that reshape the feature dimension using several dense layer with dropout
     """
-    def __init__(self, channels, dropout, activation="elu", momentum=0.99, bn_first=True, label=None, **kwargs):
+    def __init__(self, channels, dropout, activation="elu", momentum=0.99, bn_first=True,
+                 weight_decay=0.0, label=None, **kwargs):
         """
         Initialization
         :param channels: A list defines the number of features for output for each dense layer
@@ -124,41 +126,29 @@ class FeatureReshapeLayer(tf.keras.layers.Layer):
         :param activation: The activation function for each dense layer
         :param momentum: The momentum for batch normalization after each dense layer
         :param bn_first: Whether to use batch normalization before activation or not
+        :param weight_decay: The weight decay for this layer
         :param label: An optional label for the layer
         """
         super(FeatureReshapeLayer, self).__init__(name=label)
-
         self.channels = channels
         self.dropout = dropout
         self.activation = activation
         self.momentum = momentum
         self.bn_first = bn_first
-        self.layers = []
-
-        for channel_size, dropout_rate in zip(channels, dropout):
-            ls = [tf.keras.layers.Dense(channel_size, activation=None)]
-
-            # Apply batch normalization and activations
-            bn_layer = tf.keras.layers.BatchNormalization(momentum=momentum)
-            activation_layer = tf.keras.layers.Activation(activation=activation)
-            ls += [bn_layer, activation_layer] if self.bn_first else [activation_layer, bn_layer]
-
-            # Apply dropout
-            if dropout_rate > 0.0:
-                ls.append(tf.keras.layers.Dropout(dropout_rate))
-
-            self.layers.append(ls)
-
-    def count_params(self):
-        return sum([layer.count_params() for ls in self.layers for layer in ls])
+        self.weight_decay = weight_decay
 
     def call(self, inputs, *args, **kwargs):
         c = ComputationContext(*args, **kwargs)
         p = inputs[0]  # p: (B, N, 3)
         f = inputs[1]  # f: (B, N, F)
 
-        for i, ls in enumerate(self.layers):
-            with tf.name_scope(f"Level-{i}"):
-                f = c(ls, f)
+        for i, (channel_size, dropout_rate) in enumerate(zip(self.channels, self.dropout)):
+            dense = self.dense("Dense", channel_size, None, weight_decay=self.weight_decay)
+            bn = self.batch_normalization("BatchNormalization", momentum=self.momentum, weight_decay=self.weight_decay)
+            activation_ = self.activation_("Activation", activation=self.activation)
+
+            ls = (dense, bn, activation_) if self.bn_first else (dense, activation_, bn)
+
+            f = c(ls, f, name=f"Level-{i}")
 
         return p, f

@@ -15,13 +15,17 @@ def commonprefix(m):
     return s1
 
 
-class ComputationContextLayer:
+class ComputationContextLayer(tf.keras.layers.Layer):
     """
     A mock for tf.keras.layer.Layer to let it only be called inside the computation context. This is
     done by hiding the __call__ attribute and expose a "_call_by_computation_context" attribute
     """
     def __init__(self, layer):
+        super(ComputationContextLayer, self).__init__()
         self._layer = layer
+
+    def count_params(self):
+        return self._layer.count_params()
 
     def call_by_computation_context(self, *args, **kwargs):
         return self._layer(*args, **kwargs)
@@ -42,12 +46,14 @@ class ComputationContext:
         self.args = args
         self.kwargs = kwargs
 
-    def __call__(self, layers, inputs):
+    def __call__(self, layers, inputs, name=None):
         """
         Calling a ComputationContext with a single layer or a nested list of layer object, it will call them
         sequentially.
         :param layers: The layer(s) to be called, it can be a single layer object, or a NESTED list of layers
         :param inputs: The inputs
+        :param name: An optional name for the name scope. When call this method with multiple nested layers,
+        it try to define a name scope for wrapping all the computation.
         :return: The outputs after the layer(s)
         """
         def call_layer(l, x):
@@ -65,7 +71,10 @@ class ComputationContext:
             outputs = inputs
 
             # Add a name scope for wrapping
-            scope_name = commonprefix([layer.name for layer in layers]).strip("-/\\?_ \t\n") or "ComputationContext"
+            if name is not None:
+                scope_name = name
+            else:
+                scope_name = commonprefix([layer.name for layer in layers]).strip("-/\\?_ \t\n") or "ComputationContext"
             with tf.name_scope(scope_name):
                 for l in layers:
                     outputs = call_layer(l, outputs)

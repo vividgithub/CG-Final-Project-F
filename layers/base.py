@@ -2,7 +2,14 @@ import tensorflow as tf
 from utils.computil import ComputationContextLayer
 
 
-def _get_regularizer_from_weight_decay(self, weight_decay):
+def get_regularizer_from_weight_decay(weight_decay):
+    """
+    Use the weight decay (a float or a l1, l2 tuple) to generate a
+    keras regularizer
+    :param weight_decay: The weight decay. Could be a float to specify a l2 weight decay, or a two-value
+    tuple to specify a l1 & l2 weight decay
+    :return: A regularizer
+    """
     if isinstance(weight_decay, (list, tuple)):
         l1, l2 = weight_decay
         return tf.keras.regularizers.L1L2(l1=l1, l2=l2)
@@ -17,20 +24,22 @@ class ComposeLayer(tf.keras.layers.Layer):
     def __init__(self, *args, **kwargs):
         super(ComposeLayer, self).__init__(*args, **kwargs)
         self.sub_layers = dict()
-        self._c = None
 
-    def add_layer(self, name, layer_type, *args, **kwargs):
+    def count_params(self):
+        return sum([l.count_params() for l in self.sub_layers.values()])
+
+    def add_layer(self, label, layer_type, *args, **kwargs):
         """
         Add a layer as its sublayer for computation if the unique name of the layer if not exists
-        :param name: An unique name of that layer
+        :param label: An unique name of that layer
         :param layer_type: The class of the layer
         :param args: The args for initialization of the layer
         :param kwargs: The kwargs for initialization of the layer
         :return: An instance of that layer
         """
-        if self.sub_layers.get(name) is None:
-            self.sub_layers[name] = ComputationContextLayer(layer_type(*args, **kwargs))
-        return self.sub_layers[name]
+        if self.sub_layers.get(label) is None:
+            self.sub_layers[label] = ComputationContextLayer(layer_type(*args, **kwargs))
+        return self.sub_layers[label]
 
     def dense(self, name, units, activation, weight_decay):
         """
@@ -46,8 +55,8 @@ class ComposeLayer(tf.keras.layers.Layer):
             tf.keras.layers.Dense,
             units=units,
             activation=activation,
-            kernel_regularizer=_get_regularizer_from_weight_decay(weight_decay),
-            bias_regularizer=_get_regularizer_from_weight_decay(weight_decay),
+            kernel_regularizer=get_regularizer_from_weight_decay(weight_decay),
+            bias_regularizer=get_regularizer_from_weight_decay(weight_decay),
             name=name
         )
 
@@ -63,8 +72,8 @@ class ComposeLayer(tf.keras.layers.Layer):
             name,
             tf.keras.layers.BatchNormalization,
             momentum=momentum,
-            beta_regularizer=_get_regularizer_from_weight_decay(weight_decay),
-            gamma_regularizer=_get_regularizer_from_weight_decay(weight_decay),
+            beta_regularizer=get_regularizer_from_weight_decay(weight_decay),
+            gamma_regularizer=get_regularizer_from_weight_decay(weight_decay),
             name=name
         )
 
