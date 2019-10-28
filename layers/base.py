@@ -1,20 +1,5 @@
 import tensorflow as tf
-from utils.computil import ComputationContextLayer
-
-
-def get_regularizer_from_weight_decay(weight_decay):
-    """
-    Use the weight decay (a float or a l1, l2 tuple) to generate a
-    keras regularizer
-    :param weight_decay: The weight decay. Could be a float to specify a l2 weight decay, or a two-value
-    tuple to specify a l1 & l2 weight decay
-    :return: A regularizer
-    """
-    if isinstance(weight_decay, (list, tuple)):
-        l1, l2 = weight_decay
-        return tf.keras.regularizers.L1L2(l1=l1, l2=l2)
-    else:
-        return tf.keras.regularizers.L1L2(l1=0.0, l2=weight_decay)
+from utils.computil import ComputationContextLayer, get_regularizer_from_weight_decay
 
 
 class ComposeLayer(tf.keras.layers.Layer):
@@ -91,19 +76,19 @@ class ComposeLayer(tf.keras.layers.Layer):
             name=name
         )
 
-    def unary_convolution(self, name, channel, activation, momentum, weight_deacy):
+    def unary_conv(self, name, channel, activation, momentum, weight_decay):
         """
         Adding a unary convolution layer (in KPConv, Dense --> Normalization --> Activation).
         :param name: The name of the unary convolution
         :param channel: The output channel for the unary convolution
         :param activation: The activation, None for not using any activation
         :param momentum: The momentum used in batch normalization, none for not using any batch normalization
-        :param weight_deacy
+        :param weight_decay: The weight decay for the unary convolution
         :return: The unary convolution layer
         """
-        ls = [self.dense(name + "-1x1 Convolution", channel, activation=None, weight_decay=weight_deacy)]
+        ls = [self.dense(name + "-Unary", channel, activation=None, weight_decay=weight_decay)]
         if momentum is not None:
-            ls.append(self.batch_normalization(name + "-Normalization", momentum=momentum, weight_deacy=weight_deacy))
+            ls.append(self.batch_normalization(name + "-Normalization", momentum=momentum, weight_decay=weight_decay))
         if activation is not None:
             ls.append(self.activation_(name, activation=activation))
 

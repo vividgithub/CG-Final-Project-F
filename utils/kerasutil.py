@@ -1,4 +1,6 @@
 from os import path
+from time import time
+
 import tensorflow as tf
 import logger
 
@@ -34,6 +36,9 @@ class ModelCallback(tf.keras.callbacks.Callback):
         self.info_save_path = path.join(save_dir, "info.txt")
         self.log_step = log_step
 
+        # Use to show the diff time for each log
+        self._last_log_time = None
+
         self.best_results = None
 
     def on_train_batch_begin(self, batch, logs=None):
@@ -59,8 +64,15 @@ class ModelCallback(tf.keras.callbacks.Callback):
         pass
 
     def _on_logging(self, batch, logs):
+
+        # Compute the diff time
+        current_log_time = time()
+        diff_time = 0.0 if self._last_log_time is None else (current_log_time - self._last_log_time) * 1000.0
+        self._last_log_time = current_log_time
+
         results_output = ", ".join(["{}:{}".format(key, value) for key, value in logs.items()])
-        logger.log("On batch {}/{}, results:{{{}}}".format(batch, self.train_step, results_output))
+        logger.log("On batch {}/{}, results:{{{}}}, time: {}ms".format(batch, self.train_step,
+                                                                       results_output, diff_time))
 
     def _on_validation(self, batch, logs):
         logger.log("On batch {}/{}, BEGIN EVALUATION".format(batch, self.train_step), color="blue")

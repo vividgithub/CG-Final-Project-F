@@ -4,6 +4,21 @@ from collections.abc import Iterable
 import logger
 
 
+def get_regularizer_from_weight_decay(weight_decay):
+    """
+    Use the weight decay (a float or a l1, l2 tuple) to generate a
+    keras regularizer
+    :param weight_decay: The weight decay. Could be a float to specify a l2 weight decay, or a two-value
+    tuple to specify a l1 & l2 weight decay
+    :return: A regularizer
+    """
+    if isinstance(weight_decay, (list, tuple)):
+        l1, l2 = weight_decay
+        return tf.keras.regularizers.L1L2(l1=l1, l2=l2)
+    else:
+        return tf.keras.regularizers.L1L2(l1=0.0, l2=weight_decay)
+
+
 def commonprefix(m):
     """Given a list of pathnames, returns the longest common leading component"""
     if not m: return ''

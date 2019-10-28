@@ -1,4 +1,4 @@
-from utils.computil import ComputationContext
+from utils.computil import ComputationContext, get_regularizer_from_weight_decay
 import tensorflow as tf
 from utils.confutil import register_conf
 from layers.base import ComposeLayer
@@ -61,17 +61,22 @@ class OutputClassificationSegmentationLayer(tf.keras.layers.Layer):
     The final output layer, normally it is a dense layer for converting the feature dimension
     into the size of number of class for output
     """
-    def __init__(self, class_count, use_position=False, label=None, **kwargs):
+    def __init__(self, class_count, use_position=False, weight_decay=0.0, label=None, **kwargs):
         """
         Initialization
         :param class_count: The number of class for output
         :param use_position: Whether to use the position as extra input for the dense layer
+        :param weight_decay: The weight decay used in this layer
         :param label: An optional label for the layer
         """
         super(OutputClassificationSegmentationLayer, self).__init__(name=label)
         self.class_count = class_count
         self.use_posiiton = use_position
-        self.dense = tf.keras.layers.Dense(class_count)
+        self.dense = tf.keras.layers.Dense(
+            class_count,
+            kernel_regularizer=get_regularizer_from_weight_decay(weight_decay),
+            bias_regularizer=get_regularizer_from_weight_decay(weight_decay)
+        )
 
     def call(self, inputs, *args, **kwargs):
         x = tf.concat(inputs, axis=-1) if self.use_posiiton else inputs[1]  # (B, N, F) or (B, N, F + 3)
@@ -90,16 +95,21 @@ class OutputConditionalSegmentationLayer(tf.keras.layers.Layer):
     is (B, N, F) -> (B, N, @class_count). In addition, in testing/validation stage, it first use a
     reduce mean operator to map (B, N, F) to (B, 1, F) for testing classification.
     """
-    def __init__(self, class_count, use_position=False, label=None, **kwargs):
+    def __init__(self, class_count, use_position=False, weight_decay=0.0, label=None, **kwargs):
         """
         Initialize the layer
         :param class_count: The class count for the classification task
         :param use_position: Whether to use position as extra input to the dense layer
+        :param weight_decay: The weight decay for this layer
         :param label: An optional label for the layer
         """
         super(OutputConditionalSegmentationLayer, self).__init__(name=label)
-        self.dense = tf.keras.layers.Dense(class_count)
         self.use_position = use_position
+        self.dense = tf.keras.layers.Dense(
+            class_count,
+            kernel_regularizer=get_regularizer_from_weight_decay(weight_decay),
+            bias_regularizer=get_regularizer_from_weight_decay(weight_decay)
+        )
 
     def call(self, inputs, training, *args, **kwargs):
         x = tf.concat(inputs, axis=-1) if self.use_position else inputs[1]  # (B, N, F) or (B, N, F + 3)

@@ -1,6 +1,6 @@
 import tensorflow as tf
-import logger
-from legacy.kpconv import kpconv_ops, load_kernels
+from utils.computil import get_regularizer_from_weight_decay
+from legacy.kpconv import load_kernels
 from utils.confutil import register_conf
 from ops import neighbor_aggregate_sum
 
@@ -9,7 +9,8 @@ from ops import neighbor_aggregate_sum
 class KPConvLayer(tf.keras.layers.Layer):
     """The KP convolution layer(https://arxiv.org/pdf/1904.08889.pdf)"""
 
-    def __init__(self, channel, k, extent, fixed="center", influence="linear", aggregation="sum", label=None, **kwargs):
+    def __init__(self, channel, k, extent, fixed="center", influence="linear", aggregation="sum", weight_decay=0.0,
+                 label=None, **kwargs):
         """
         Initialize a KP convolution layer
         :param channel: Number of channel to output
@@ -18,6 +19,7 @@ class KPConvLayer(tf.keras.layers.Layer):
         :param fixed: String in ('none', 'center' or 'verticals') - fix position of certain kernel points
         :param influence: String in ('constant', 'linear', 'gaussian') - influence function of the kernel points
         :param aggregation: String in ('closest', 'sum') - whether to sum influences, or only keep the closest
+        :param weight_decay: The weight decay of this layer
         :param label: An optional label for the layer
         """
         super(KPConvLayer, self).__init__(name=label)
@@ -28,6 +30,7 @@ class KPConvLayer(tf.keras.layers.Layer):
         self.influence = influence
         self.aggregation = aggregation
         self.k_values = None
+        self.weight_decay = weight_decay
 
         # Load the k_points location
         self.k_points = load_kernels(1.5 * extent, k, num_kernels=1, dimension=3, fixed=fixed).reshape(k, 3)
@@ -45,7 +48,8 @@ class KPConvLayer(tf.keras.layers.Layer):
         self.k_values = self.add_weight(
             name="k_values",
             shape=(self.k, f, self.channel),
-            trainable=True
+            trainable=True,
+            regularizer=get_regularizer_from_weight_decay(self.weight_decay)
         )
 
     def call(self, inputs, *args, **kwargs):
@@ -61,11 +65,13 @@ class KPConvLayer(tf.keras.layers.Layer):
         neighbors_features = tf.gather(features, neighbor_indices)  # (N', (neighbor), F)
 
         # Convert to local coordinates
-        neighbors = neighbors - tf.expand_dims(output_points, axis=1)  # (N', (neighbor), 3)
+        # neighbors = neighbors - tf.expand_dims(output_points, axis=1)  # (N', (neighbor), 3)
 
         # Flatten
         neighbors_row_splits = neighbors.row_splits
         neighbors, neighbors_features = neighbors.values, neighbors_features.values
+
+        neighbors = neighbors - tf.gather(output_points, tf.ragged.row_splits_to_segment_ids(neighbors_row_splits))
 
         # Get all difference matrices
         neighbors = tf.expand_dims(neighbors, axis=1)  # (N'x(neighbor), 1, 3)

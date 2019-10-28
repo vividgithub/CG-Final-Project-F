@@ -1,5 +1,6 @@
 import tensorflow as tf
 from utils.confutil import register_conf, object_from_conf
+from utils.computil import ComputationContext
 from layers.pooling import PoolingLayer
 from layers.base import ComposeLayer
 
@@ -29,66 +30,6 @@ def unpack_ragged(x, name=None):
         row_splits = tf.range(0, b + 1) * n  # [0, n, ..., b * n]
 
         return x_, row_splits
-
-
-# @register_conf("block-simple", scope="layer")
-# class SimpleBlock(tf.keras.layers.Layer):
-#     """
-#     A simple convolution block, it accepts an input of (points, features), which points is (B, (N), 3) and features
-#     is (B, (N), F). It uses custom convolution op to generate new features, new_features: (B, (N), F') and output
-#     (points, new_features).
-#     """
-#     def __init__(self, neighbor_layer, conv_layer, label=None, **kwargs):
-#         """
-#         Initialization
-#         :param neighbor_layer: The neighbor layer accepts an inputs (N, 3) and (N', 3) and their row splits value
-#         and generate a tuple representing ragged tensor for neighbor indices (N', (neighbor))
-#         :param conv_layer: The convolution layer accepts points: (N, 3), features: (N, F), output_points: (N', 3) and
-#         the neighbor indices: (N', (neighbor)) and generate the new point feature (N', F')
-#         :param label: An optional label for the layer
-#         and generate the convolution result new_features: (N', F'). In simple block, output_points = points
-#         """
-#         super(SimpleBlock, self).__init__(name=label)
-#         self.neighbor_layer = neighbor_layer
-#         self.conv_layer = conv_layer
-#
-#     @staticmethod
-#     def conf_func(conf):
-#         """
-#         Defines how to convert a configuration dict to a SimpleBlock object
-#         :param conf: The configuration dict
-#         :return: SimpleBlock object
-#         """
-#         return SimpleBlock(
-#             neighbor_layer=lambda: object_from_conf(conf["neighbor"], scope="layer"),
-#             conv_layer=lambda: object_from_conf(conf["conv"], scope="layer"),
-#             **{k: v for k, v in conf.items() if k != "neighbor" and k != "conv"}  # By pass others
-#         )
-#
-#     def count_params(self):
-#         params_neighbor_op = self.neighbor_layer.count_params() if hasattr(self.neighbor_layer, "count_params") else 0
-#         params_conv_op = self.conv_layer.count_params() if hasattr(self.conv_layer, "count_params") else 0
-#         return params_conv_op + params_neighbor_op
-#
-#     def call(self, inputs, *args, **kwargs):
-#         points, features = inputs[0], inputs[1]
-#
-#         # Stacked the points and features by deleting the batch dimensions
-#         stacked_points, points_splits = unpack_ragged(points, name="UnpackPoints")
-#         stacked_features, features_splits = unpack_ragged(features, name="UnpackFeatures")
-#
-#         # Get the neighbor indices
-#         neighbor_indices = self.neighbor_layer(stacked_points, stacked_points,
-#                                                points_splits, points_splits, *args, **kwargs)
-#
-#         # Convolution
-#         with tf.name_scope("Convolution"):
-#             stacked_output_features = self.conv_layer(stacked_points, stacked_features,
-#                                                       stacked_points, neighbor_indices, *args, **kwargs)
-#
-#             output_features = tf.RaggedTensor(stacked_output_features, features_splits)
-#
-#         return points, output_features
 
 
 @register_conf("block-res", scope="layer")
@@ -127,7 +68,8 @@ class ResBlock(ComposeLayer):
     point set than the input
     """
     def __init__(self, structure, channel, neighbor_layer, conv_layer,
-                 sampling_layer=None, pooling_layer=None, activation=None, momentum=0.99, label=None, **kwargs):
+                 sampling_layer=None, pooling_layer=None, activation=None,
+                 momentum=0.99, weight_decay=0.0, label=None, **kwargs):
         """
         Initialization
         :param structure: The structure of layer, supports "simple", "normal", "bottleneck" and "bottleneck-stride"
@@ -144,6 +86,7 @@ class ResBlock(ComposeLayer):
         for stride structure
         :param activation: The activation used in the block
         :param momentum: The momentum for batch normalization
+        :param weight_decay: The weight decay for the layer
         :param label: An optional label for this layer
         """
         # FIXME: Weight decay and leaky relu
@@ -163,6 +106,7 @@ class ResBlock(ComposeLayer):
         self.pooling_layer = pooling_layer
         self.activation = activation or "relu"
         self.bn_momentum = momentum
+        self.weight_decay = weight_decay
 
     def should_sampling(self):
         return self._should_sampling(self.structure)
@@ -182,15 +126,34 @@ class ResBlock(ComposeLayer):
         """
         channel = conf["channel"]
         structure = conf["structure"]
+        weight_decay = conf.get("weight_decay", 0.0)
         channel_for_conv = ResBlock._num_channel_for_convolution_output(structure, channel)
+
+        neighbor_layer = object_from_conf(
+            conf["neighbor"],
+            scope="layer",
+            context={"weight_decay": weight_decay}
+        )
+
+        conv_layer = object_from_conf(
+            conf["conv"],
+            scope="layer",
+            context={"weight_decay": weight_decay, "channel": channel_for_conv}
+        )
+
+        sampling_layer = object_from_conf(
+            conf["sampling"],
+            scope="layer",
+            context={"weight_decay": weight_decay}
+        ) if "sampling" in conf else None
+
+        pooling_layer = PoolingLayer(method=conf["pooling"], weight_decay=weight_decay) if "pooling" in conf else None
 
         # Parse the "neighbor", "conv", "sampling" and "pooling" to construct layer
         # and inject the channel context to the convolution layer
         return ResBlock(
-            neighbor_layer=object_from_conf(conf["neighbor"], scope="layer"),
-            conv_layer=object_from_conf(conf["conv"], scope="layer", context={"channel": channel_for_conv}),
-            sampling_layer=object_from_conf(conf["sampling"], scope="layer") if "sampling" in conf else None,
-            pooling_layer=PoolingLayer(method=conf["pooling"]) if "pooling" in conf else None,
+            neighbor_layer=neighbor_layer, conv_layer=conv_layer,
+            sampling_layer=sampling_layer, pooling_layer=pooling_layer,
             **{k: v for k, v in conf.items() if k not in ["neighbor", "conv", "sampling", "pooling"]}
         )
 
@@ -201,20 +164,10 @@ class ResBlock(ComposeLayer):
         ])
 
     def call(self, inputs, *args, **kwargs):
-
-        def unary_conv(name, x, fdim, activated, normalized):
-            with tf.name_scope(name):
-                x = self.add_layer(name + "-Conv", tf.keras.layers.Dense, fdim, use_bias=False,
-                                   activation=None)(x, *args, **kwargs)
-                x = self.add_layer(name + "-BN", tf.keras.layers.BatchNormalization,
-                                   momentum=self.bn_momentum)(x, *args, **kwargs) if normalized else x
-                x = self.add_layer(name + "-Activation", tf.keras.layers.Activation,
-                                   self.activation)(x, *args, **kwargs) if activated else x
-            return x
-
         # points: (B, (N), 3)
         # features: (B, (N), F)
         points, features = inputs[0], inputs[1]
+        c = ComputationContext(*args, **kwargs)
 
         with tf.name_scope("Preparation"):
             # Stack the inputs
@@ -231,52 +184,63 @@ class ResBlock(ComposeLayer):
                 output_points, output_row_splits = points, row_splits
             else:
                 with tf.name_scope("Sampling"):
-                    output_points, output_row_splits = self.sampling_layer([points, row_splits], *args, **kwargs)
+                    output_points, output_row_splits = c(self.sampling_layer, [points, row_splits])
 
             # Now we can get the neighbor information
             with tf.name_scope("Neighbor"):
-                neighbor_indices = self.neighbor_layer([points, row_splits, output_points, output_row_splits], *args, **kwargs)
+                neighbor_indices = c(self.neighbor_layer, [points, row_splits, output_points, output_row_splits])
 
         # Shortcut line
         shortcut = None
         if self.has_shortcut():
             with tf.name_scope("Shortcut"):
-                shortcut = self.pooling_layer([points, features, neighbor_indices], *args, **kwargs) \
-                    if self.should_sampling() else points  # (N', F)
-                shortcut = unary_conv("Shortcut-1x1-Conv", shortcut, self.channel,
-                                      activated=False, normalized=True)  # (N', F')
+                shortcut = c(self.pooling_layer, [points, features, neighbor_indices]) if self.should_sampling() \
+                    else points  # (N', F)
+                shortcut = c(
+                    self.unary_conv("Shortcut-1x1-Conv", self.channel, activation=None,
+                                    momentum=self.bn_momentum, weight_decay=self.weight_decay),
+                    shortcut
+                )  # (N', F')
 
         # Mainline
         with tf.name_scope("Mainline"):
-            # 1x1 convolution for bottleneck
-            mainline = unary_conv("Pre-1x1-Conv", features, self.channel // 4, activated=True, normalized=True) \
-                if self.bottleneck() else features  # (N', F) for non-bottleneck or (N', F'/4)
+            mainline = c(
+                self.unary_conv("Pre-1x1-Conv", self.channel // 4, activation=self.activation,
+                                momentum=self.bn_momentum, weight_decay=self.weight_decay),
+                features
+            ) if self.bottleneck() else features  # (N', F) for non-bottleneck or (N', F'/4)
 
-            # Convolution
             with tf.name_scope("Main-Conv"):
-                mainline = self.conv_layer([points, mainline, output_points, neighbor_indices],
-                                           *args, **kwargs)  # (N', F') for non-bottleneck or (N', F'/4)
-                mainline = self.add_layer("Main-Conv-BN", tf.keras.layers.BatchNormalization,
-                                          momentum=self.bn_momentum)(mainline, *args, **kwargs)
-                mainline = self.add_layer("Main-Conv-Activation", tf.keras.layers.Activation,
-                                          self.activation)(mainline, *args, **kwargs)
+                # Main Convolution
+                mainline = c(self.conv_layer, [points, mainline, output_points, neighbor_indices])
+                mainline = c(
+                    self.batch_normalization("Main-Conv-BN", momentum=self.bn_momentum, weight_decay=self.weight_decay),
+                    mainline
+                )
+                mainline = c(self.activation_("Main-Conv-Activation", activation=self.activation), mainline)
 
-            # 1x1 convolution
-            mainline = unary_conv("Post-1x1-Conv", mainline, self.channel, activated=False, normalized=True) \
-                if self.bottleneck() else mainline  # (N', F')
+            mainline = c(
+                self.unary_conv("Post-1x1-Conv", self.channel, activation=None,
+                                momentum=self.bn_momentum, weight_decay=self.weight_decay),
+                mainline
+            ) if self.bottleneck() else mainline  # (N', F')
 
         # Add mainline and shortcut
         if self.has_shortcut():
             with tf.name_scope("Combine"):
                 output_features = mainline + shortcut if self.has_shortcut() else mainline  # (N', F')
                 # Final activation
-                output_features = self.add_layer("OutputActivation", tf.keras.layers.Activation,
-                                                 self.activation)(output_features, *args, **kwargs)  # (N', F')
+                output_features = c(
+                    self.activation_("OutputActivation", activation=self.activation),
+                    output_features
+                )  # (N', F')
         else:
             output_features = mainline
 
         with tf.name_scope("Output"):
             return (
-                tf.RaggedTensor.from_row_splits(output_points, row_splits=output_row_splits, name="OutputPoints", validate=False),
-                tf.RaggedTensor.from_row_splits(output_features, row_splits=output_row_splits, name="OutputFeatures", validate=False)
+                tf.RaggedTensor.from_row_splits(output_points, row_splits=output_row_splits,
+                                                name="OutputPoints", validate=False),
+                tf.RaggedTensor.from_row_splits(output_features, row_splits=output_row_splits,
+                                                name="OutputFeatures", validate=False)
             )
