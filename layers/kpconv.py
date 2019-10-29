@@ -93,7 +93,7 @@ class KPConvLayer(tf.keras.layers.Layer):
 
         weighted_features = all_weights * neighbors_features  # (N'x(neighbor), k, F)
         weighted_features = neighbor_aggregate_sum(
-            tf.RaggedTensor.from_row_splits(weighted_features, neighbors_row_splits, validate=False),
+            tf.RaggedTensor.from_row_splits(weighted_features, neighbors_row_splits, validate=False)
         )  # (N'x(neighbor), k, F) --> (N', (neighbor), k, F) --> (N', k, F)
 
         # Apply network weights
