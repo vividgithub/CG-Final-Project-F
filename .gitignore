@@ -2,6 +2,8 @@
 /test.py
 /test.ipynb
 script/temp/
+conf/**/*_temp.pyconf
+conf/**/*_test.pyconf
 
 # Libaries
 ops/*.dll

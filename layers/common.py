@@ -153,9 +153,9 @@ class FeatureReshapeLayer(ComposeLayer):
         f = inputs[1]  # f: (B, N, F)
 
         for i, (channel_size, dropout_rate) in enumerate(zip(self.channels, self.dropout)):
-            dense = self.dense("Dense", channel_size, None, weight_decay=self.weight_decay)
-            bn = self.batch_normalization("BatchNormalization", momentum=self.momentum, weight_decay=self.weight_decay)
-            activation_ = self.activation_("Activation", activation=self.activation)
+            dense = self.dense(f"Dense-Level-{i}", channel_size, None, weight_decay=self.weight_decay)
+            bn = self.batch_normalization(f"BatchNormalization-Level-{i}", momentum=self.momentum, weight_decay=self.weight_decay)
+            activation_ = self.activation_(f"Activation-Level-{i}", activation=self.activation)
 
             ls = (dense, bn, activation_) if self.bn_first else (dense, activation_, bn)
 

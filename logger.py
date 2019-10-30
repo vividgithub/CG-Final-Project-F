@@ -9,6 +9,18 @@ _color_code = {
 }
 
 
+def format(item):
+    """
+    Format a item to string
+    :param item: Any item
+    :return: A formatted string
+    """
+    if type(item) is dict:
+        return "{" + ", ".join([str(k) + ":" + str(v) for k, v in item.items()]) + "}"
+    else:
+        return str(item)
+
+
 def log(info, *, prefix=True, end='\n', color=None):
     """
     Log information
