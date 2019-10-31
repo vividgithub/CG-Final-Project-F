@@ -2,6 +2,19 @@
 /test.py
 /test.ipynb
 script/temp/
+conf/**/*_temp.pyconf
+conf/**/*_test.pyconf
+
+# Libaries
+ops/*.dll
+
+# Cmake
+cpp/CMakeSettings.json
+cpp/cmake-build-release
+cpp/cmake-build-debug
+cpp/out
+cpp/.idea
+cpp/.vs
 
 # Libaries
 ops/*

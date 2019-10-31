@@ -28,6 +28,13 @@ And current running dataset is ModelNet40-2048. Then the running model data will
 be saved in "/home/local/Models/ModelNet40-2048/${MODEL_NAME}".
 """
 
+MODE_OPTIONS_DESCRIPTION = """
+The mode to run the configuration. You could use "new" to create a 
+new instance of the model. Or use "resume" to resume the previous task. 
+You can also use "resume-copy" for resuming the last task but maintain the previous 
+results (copy the latest execution result to a new directory).
+"""
+
 
 def parse_path(*paths):
     return abspath(expanduser(join(*paths)))
@@ -38,11 +45,15 @@ if __name__ == "__main__":
     parser.add_argument("model_config", type=str, help="The path for model configuration")
     parser.add_argument("-d", "--data", type=str, default="", help=DATA_OPTIONS_DESCRIPTION)
     parser.add_argument("-s", "--save", type=str, default="", help=SAVE_OPTIONS_DESCRIPTION)
+    parser.add_argument("-m", "--mode", type=str, default="new", help=MODE_OPTIONS_DESCRIPTION)
     args = parser.parse_args()
 
     model_conf_path = parse_path(args.model_config)
     root_data_dir = parse_path(args.data) if args.data else ""
     root_save_dir = parse_path(args.save) if args.save else ""
+
+    mode = args.mode
+    assert mode in ["new", "resume", "resume-copy"], f"Invalid mode \"{mode}\""
 
     assert model_conf_path.endswith(".pyconf"), \
         f"The model configuration \"{model_conf_path}\" is not a valid pyconf file"
@@ -103,7 +114,7 @@ if __name__ == "__main__":
     model_name = "".join([x.capitalize() for x in model_name.split("_")])  # Move lower case to camel case
 
     log(f"Model name: {model_name}")
-    model_runner = ModelRunner(model_conf, data_conf, model_name, save_dir, train_dataset, test_dataset)
+    model_runner = ModelRunner(model_conf, data_conf, model_name, save_dir, train_dataset, test_dataset, mode=mode)
 
     log("Running model")
     model_runner.train()

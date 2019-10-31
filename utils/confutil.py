@@ -45,6 +45,7 @@ class ConfigManager:
         is conflicted when scope is not provided
         :return: A configurable object
         """
+        conf = {**(context or dict()), **conf}
         name = conf["name"]
 
         if scope is None:
@@ -56,8 +57,7 @@ class ConfigManager:
             # Scope is provided
             conf_func = self.map[(scope, name)]
 
-        merged_conf = {**(context or dict()), **conf}
-        return conf_func(merged_conf)
+        return conf_func(conf)
 
 
 _shared_conf_manager = ConfigManager()  # Global configuration manager
