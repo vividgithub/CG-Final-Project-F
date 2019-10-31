@@ -20,13 +20,15 @@
     },
     "net": {
         "structure": "sequence",
-        "extend_feature": "none",
         "layers": [
+            {"name": "data-split", "label": "data-split"},
+            #-----------------------------------------------------------------------------
             {"name": "conv-xconv", "k": 8, "d": 1, "c": 16 * 3, "cpf": 24, "depth_multiplier": 4, "sampling": "random", "sorting_method": None, "with_global": False},
             {"name": "pooling-xconv", "k": 12, "d": 2, "p": 384, "c": 32 * 3, "cpf": 12, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
             {"name": "pooling-xconv", "k": 16, "d": 2, "p": 128, "c": 64 * 3, "cpf": 24, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
             {"name": "pooling-xconv", "k": 16, "d": 3, "p": 128, "c": 128 * 3, "cpf": 48, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": True},
             {"name": "feature-reshape", "channels": [128 * 3, 64 * 3], "dropout": [0.0, 0.8]},
+            #-----------------------------------------------------------------------------
             {"name": "output-conditional-segmentation", "output_size": 128}  # Indicate the output is (B, N, @class_count) instead of (B, @class_count)
         ]
     },

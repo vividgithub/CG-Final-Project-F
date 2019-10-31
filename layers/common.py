@@ -12,7 +12,7 @@ class InputFeatureExtendLayer(tf.keras.layers.Layer):
     the feature, "one" for placing adding a one-hot 1s to the feature dimensions. And "pos" to extend the input
     positions to the features
     """
-    def __init__(self, method, label=None):
+    def __init__(self, method, label=None, **kwargs):
         """
         Initialization
         :param method: The method to extend the feature, accept "none", "one", "pos"

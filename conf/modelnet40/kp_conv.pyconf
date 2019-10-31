@@ -109,8 +109,10 @@
     },
     "net": {
         "structure": "sequence",
-        "extend_feature": "one",
         "layers": [
+            {"name": "data-split", "label": "data-split"},
+            {"name": "input-feature-extend", "method": "one"},
+            #------------------------------------------------------------------
             {
                 "name": "block-res",
                 "label": "simple-1-1",

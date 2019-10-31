@@ -16,3 +16,5 @@ single configuration file: `modelutil.net_from_conf` (not yet completed)
 - 2019.09.28 `Jianwei Jiang`: Add save best pattern and beautify ouptut
 - 2019.10.26 `Jianwei Jiang`: Add weight decay
 - 2019.10.29 `Jianwei Jiang`: Make the neighborhood aggregation method works in GPU for acceleration
+- 2019.10.30 `Jianwei Jiang`: Add mode to resume previous task
+- 2019.10.31 `Jianwei Jiang`: Generate network from graph configuration in pyconf
