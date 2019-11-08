@@ -110,9 +110,12 @@ class OutputConditionalSegmentationLayer(tf.keras.layers.Layer):
             kernel_regularizer=get_regularizer_from_weight_decay(weight_decay),
             bias_regularizer=get_regularizer_from_weight_decay(weight_decay)
         )
+        self.output_size = kwargs['output_size']
 
     def call(self, inputs, training, *args, **kwargs):
         x = tf.concat(inputs, axis=-1) if self.use_position else inputs[1]  # (B, N, F) or (B, N, F + 3)
+        if len(x.shape) == 2:  # FIXME: Repeat on the axis 1 for compatibility with PointConv output
+            x = tf.tile(tf.expand_dims(x, 1), [1, self.output_size, 1])
         if not training:
             x = tf.reduce_mean(x, axis=1, keepdims=True)  # (B, N, F) for training and (B, 1, F) for testing
         x = self.dense(x, *args, **kwargs)  # (B, N/1, class_count)
