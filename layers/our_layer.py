@@ -2,6 +2,9 @@ import tensorflow as tf
 from tf_sampling import farthest_point_sample, gather_point
 from tf_grouping import query_ball_point, group_point, knn_point
 from tf_interpolate import three_nn, three_interpolate
+import tensorflow as tf
+import legacy.pointfly as pf
+from utils.confutil import register_conf
 
 class SALayerCore(tf.keras.layers.Layer):
     """
@@ -307,3 +310,221 @@ class SALayer(SALayerCore):
 @register_conf(name="FP", scope="layer", conf_func="self")
 class FPLayer(FPLayerCore):
     pass
+
+@register_conf(name="conv-1d", scope="layer", conf_func="self")
+class Conv1dLayer(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        num_output_channels,
+        kernel_size,
+        stride=1,
+        padding='SAME',
+        use_xavier=True,
+        stddev=1e-3,
+        weight_decay=0.0,
+        activation_fn=tf.keras.activations.relu,
+        bn=False,
+        bn_decay=None,
+        is_training=None,
+        is_dist=False
+    ):
+        super(Conv1dLayer, self).__init__()
+        self.num_output_channels = num_output_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.use_xavier = use_xavier
+        self.stddev = stddev
+        self.weight_decay = weight_decay
+        self.activation_fn = activation_fn
+        self.bn = bn
+        self.bn_decay = bn_decay
+        self.is_training = is_training
+        self.is_dist = is_dist
+        """ 1D convolution with non-linear operation.
+
+        Args:
+            num_output_channels: int
+            kernel_size: int
+            stride: int
+            padding: 'SAME' or 'VALID'
+            use_xavier: bool, use xavier_initializer if true
+            stddev: float, stddev for truncated_normal init
+            weight_decay: float
+            activation_fn: function
+            bn: bool, whether to use batch norm
+            bn_decay: float or float tensor variable in [0,1]
+            is_training: bool Tensor variable
+
+        Returns:
+            Variable tensor
+        """
+
+    #inputs: 3-D tensor BxLxC
+    def call(self, inputs):
+        layer_conv1d = tf.keras.layers.Conv1d(
+            self.num_output_channels, 
+            self.kernel_size, 
+            strides = self.stride, 
+            padding = self.padding, 
+            kernel_initializer = tf.keras.initializers.TruncatedNormal(stddev = self.stddev),
+            bias_initializer = tf.keras.initializers.Zeros(),
+            kernel_regularizer = tf.keras.regularizers.l2(0.)
+        )
+        x = layer_conv1d(inputs, training = self.is_training)
+
+        layer_batch_norm_for_conv1d = tf.keras.layers.BatchNormalization(
+            momentum = self.bn_decay,
+            beta_initializer = tf.keras.initializers.Zeros(),
+            gamma_initializer = tf.keras.initializers.Ones()
+        )
+
+        if self.bn:
+            outputs = layer_batch_norm_for_conv1d(x, training = self.is_training)
+
+        layer_activation = tf.keras.layers.Activation(self.activation_fn)
+
+        outputs = layer_activation(outputs)
+
+        return outputs
+
+@register_conf(name="dropout", scope="layer", conf_func="self")
+class DropOutLayer(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        is_training,
+        keep_prob = 0.5,
+        noise_shape = None,
+        label = None,
+        **kwargs
+    ):
+        super(DropOutLayer, self).__init__(name=label)
+        self.is_training = is_training
+        self.keep_prob = keep_prob
+        self.noise_shape = noise_shape
+    
+    def call(self, inputs):
+        """ Dropout layer.
+
+        Args:
+            inputs: tensor
+            is_training: boolean tf.Variable
+            scope: string
+            keep_prob: float in [0,1]
+            noise_shape: list of ints
+
+        Returns:
+            tensor variable
+        """
+        drop_out_layer = tf.keras.Dropout(rate = self.keep_prob, noise_shape = self.noise_shape)
+        if self.is_training:
+            outputs = drop_out_layer(inputs, training = self.is_training)
+        else
+            outputs = inputs
+        return outputs
+
+@register_conf(name="pairwise-distance-l1", scope="layer", conf_func="self")
+class PairWiseDistanceL1Layer(tf.keras.layers.Layer):
+    def __init__(self, label = None, **kwargs):
+        super(PairWiseDistanceL1Layer, self).__init__(name=label)
+
+    def call(self, inputs):
+        og_batch_size = point_cloud.get_shape().as_list()[0]
+        point_cloud = tf.squeeze(point_cloud)
+        if og_batch_size == 1:
+            point_cloud = tf.expand_dims(point_cloud, 0)
+        pairwise_distance = []
+        for idx in range(og_batch_size):
+            idx_point_cloud = point_cloud[idx, :, :]
+            l1 = tf.reduce_sum(tf.abs(tf.subtract(idx_point_cloud, tf.expand_dims(idx_point_cloud, 1))), 
+                                axis=2)
+            pairwise_distance.append(l1)
+        return tf.stack(pairwise_distance, axis=0)
+
+@register_conf(name="knn-thres", scope="layer", conf_func="self")
+class KnnThres(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        k = 20,
+        thres = 0.5,
+        label = None,
+        **kwargs
+        ):
+        super(KnnThres, self).__init__(name = label)
+        self.k = k
+        self.thres = thres
+
+    def call(self, inputs):
+        """Get KNN based on the pairwise distance.
+        Args:
+            pairwise distance: (batch_size, num_points, num_points)
+            k: int
+
+        Returns:
+            nearest neighbors: (batch_size, num_points, k)
+        """
+        og_batch_size = inputs.get_shape().as_list()[0]
+        neg_adj = -inputs
+        vals, nn_idx = tf.math.top_k(neg_adj, k=self.k)
+
+        to_add = tf.range(nn_idx.get_shape()[1])
+        to_add = tf.reshape(to_add, [-1, 1])
+        to_add = tf.tile(to_add, [1, self.k]) #[N,k]
+
+        final_nn_idx = []
+        for idx in range(og_batch_size):
+            idx_vals = vals[idx, :, :]
+            idx_nn_idx = nn_idx[idx, :, :]
+            mask = tf.cast(idx_vals < -1*self.thres, tf.int32) # [N, K]
+            idx_to_add = to_add * mask
+            idx_nn_idx = idx_nn_idx * (1 - mask) + idx_to_add 
+            final_nn_idx.append(idx_nn_idx)
+        
+        nn_idx = tf.stack(final_nn_idx, axis=0)
+
+        return tf.stop_gradient(nn_idx)
+
+@register_conf(name="get-local-feature", scope="layer", conf_func="self")
+class GetLocalFeature(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        k,
+        label = None,
+        **kwargs
+    ):
+        super(GetLocalFeature, self).__init__(name = label)
+        self.k = k
+
+    def call(self, input1, input2):
+        point_cloud = input1
+        nn_idx = input2
+        """Construct edge feature for each point
+        Args:
+            point_cloud: (batch_size, num_points, 1, num_dims)
+            nn_idx: (batch_size, num_points, k)
+            k: int
+
+        Returns:
+            edge features: (batch_size, num_points, k, num_dims)
+        """
+        og_batch_size = point_cloud.get_shape().as_list()[0]
+        point_cloud = tf.squeeze(point_cloud)
+        if og_batch_size == 1:
+            point_cloud = tf.expand_dims(point_cloud, 0)
+
+        point_cloud_central = point_cloud
+
+        point_cloud_shape = point_cloud.get_shape()
+        batch_size = point_cloud_shape[0]
+        num_points = point_cloud_shape[1]
+        num_dims = point_cloud_shape[2]
+
+        idx_ = tf.range(batch_size) * num_points
+        idx_ = tf.reshape(idx_, [batch_size, 1, 1]) 
+
+        point_cloud_flat = tf.reshape(point_cloud, [-1, num_dims])
+        point_cloud_neighbors = tf.gather(point_cloud_flat, nn_idx+idx_)
+
+        edge_feature = tf.reduce_max(point_cloud_neighbors, axis = -2, keep_dims = False)
+
+        return edge_feature

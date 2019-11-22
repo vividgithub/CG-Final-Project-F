@@ -52,6 +52,10 @@ def learning_rate_from_config(learning_rate_conf):
     """
     return object_from_conf(learning_rate_conf, scope="learning_rate")
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 19d9b9f12e41e41b67a13373a630914fe6407fd7
 def net_from_config(model_conf, data_conf):
     """
     Generate a keras network from configuration dict
