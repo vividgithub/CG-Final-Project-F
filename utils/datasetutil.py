@@ -272,6 +272,21 @@ def transform_scaling(range=(0.0, 0.05), anisotropic=True, **kwargs):
     )
 
 
+@register_conf(name="rotate_pointcloud_by_angle", scope="transform", conf_func="self")
+@dataset_map_transform
+def transform_rotate_pointcloud(rotation, **kwargs):
+    def inner(data, label):
+        rotation_angle = tf.random.uniform((), minval=rotation[0], maxval=rotation[1]) * tf.math.pi / 180
+        cosval = tf.math.cos(rotation_angle)
+        sinval = tf.math.sin(rotation_angle)
+        rotation_matrix = tf.stack([[cosval, 0, sinval],
+                                    [0, 1, 0],
+                                    [-sinval, 0, cosval]])
+        rotated_data = tf.matmul(data, rotation_matrix)
+        return rotated_data, label
+    return inner
+
+
 @register_conf(name="rotation", scope="transform", conf_func="self")
 @dataset_map_transform
 def transform_rotation(policy, range, **kwargs):

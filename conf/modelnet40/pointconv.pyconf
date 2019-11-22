@@ -5,17 +5,8 @@
         "test_load_policy": "normal",
         "train_transforms": [
             {"name": "repeat"},
-            {"name": "shuffle", "buffer_multiplier": 4},
-            {"name": "clip-feature", "c": 3},
-            {"name": "scaling", "range": (1.0, 1.1), "anisotropic": False},
-            {"name": "rotation", "policy": "euler", "range": [(0.0, 0.0), (0.0, 3.1415926), (0.0, 0.0)]},
-            "------------",
-            {"name": "sampling", "sample_num": 1024, "policy": "random-gauss", "stddev": 128, "range": (1024, 1024)}
         ],
         "test_transforms": [
-            {"name": "clip-feature", "c": 3},
-            "------------",
-            {"name": "sampling", "sample_num": 1024, "policy": "random-gauss", "stddev": 128, "range": (1024, 1024)}
         ]
     },
     "net": {
@@ -23,16 +14,16 @@
         "extend_feature": "none",
         "layers": [
             {"name": "data-split", "label": "data-split"},
+            # {"name": "print", "points": True, "features": False},
             #-----------------------------------------------------------------------------
-            {"name": "point-conv", "npoint": 512, "nsample": 32, "in_channel": 3, "mlp": [64, 64, 128], "bandwidth": 0.1, "group_all": False},
+            {"name": "point-conv", "npoint": 512, "nsample": 32, "in_channel": 3, "mlp": [64, 64, 128], "bandwidth": 0.1, "group_all": False, "use_features": False},
             {"name": "point-conv", "npoint": 128, "nsample": 64, "in_channel": 128 + 3, "mlp": [128, 128, 256], "bandwidth": 0.2, "group_all": False},
             {"name": "point-conv", "npoint": 1, "nsample": None, "in_channel": 256 + 3, "mlp": [256, 512, 1024], "bandwidth": 0.4, "group_all": True},
             {"name": "point-reshape", "shape": 1024},
             {"name": "point-deconv", "out_channels": 512},
             {"name": "point-deconv", "out_channels": 256},
             #-----------------------------------------------------------------------------
-            {"name": "output-conditional-segmentation", "output_size": 128}  # Indicate the output is (B, N, @class_count) instead of (B, @class_count)
-            # TODO: Add weight decay
+            {"name": "pointconv-output", "output_size": 1}
         ]
     },
     "control": {
@@ -43,14 +34,14 @@
         "learning_rate": {
             "name": "exponential_decay",
             "initial_learning_rate": 0.001,
-            "decay_steps": 8000,
+            "decay_steps": 18450,
             "decay_rate": 0.5,
             "staircase": True
         },
         "optimizer": {
             "name": "adam",
             "beta_1": 0.9,
-            "beta_2": 0.99,
+            "beta_2": 0.999,
             "epsilon": 1e-8
         }
     }

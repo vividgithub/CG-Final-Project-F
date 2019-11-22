@@ -3,6 +3,30 @@ from utils.confutil import register_conf
 from tf_ops.sampling.tf_sampling import farthest_point_sample
 
 
+kernel_regularizer = tf.keras.regularizers.L1L2(l2=1e-4)
+bias_regularizer = tf.keras.regularizers.L1L2(l2=1e-4)
+kernel_initializer = tf.keras.initializers.he_uniform()
+bias_initializer = tf.keras.initializers.he_uniform()
+
+
+@register_conf(name="print", scope="layer", conf_func="self")
+class PrintLayer(tf.keras.layers.Layer):
+    def __init__(self, points=False, features=True, **kwargs):
+        super(PrintLayer, self).__init__()
+        self.points = points
+        self.features = features
+
+    def call(self, inputs, *args, **kwargs):
+        import sys, logger
+        outputs = [self.points, self.features]
+        for name, input, output in zip(("points", "features"), inputs, outputs):
+            if output:
+                logger.log(name, color="red")
+                logger.log(input, color="red")
+                tf.print(input, output_stream=sys.stdout)
+        return inputs
+
+
 @register_conf(name="point-reshape", scope="layer", conf_func="self")
 class PointReshapeLayer(tf.keras.layers.Layer):
     def __init__(self, shape, **kwargs):
@@ -17,9 +41,9 @@ class PointReshapeLayer(tf.keras.layers.Layer):
 
 
 @register_conf(name="point-deconv", scope="layer", conf_func="self")
-class PointDeconfLayer(tf.keras.layers.Layer):
+class PointDeconvLayer(tf.keras.layers.Layer):
     def __init__(self, out_channels, dropout_rate=0.4, **kwargs):
-        super(PointDeconfLayer, self).__init__()
+        super(PointDeconvLayer, self).__init__()
         self.out_channels = out_channels
         self.dropout_rate = dropout_rate
         self.sub_layers = dict()
@@ -31,6 +55,13 @@ class PointDeconfLayer(tf.keras.layers.Layer):
             self.sub_layers[name] = layer
         return layer(inputs, training=training)
 
+    def relu(self, inputs, name, training):
+        layer = self.sub_layers.get(name)
+        if not layer:
+            layer = tf.keras.layers.ReLU(name=name)
+            self.sub_layers[name] = layer
+        return layer(inputs)
+
     def dropout(self, inputs, p, name, training):
         layer = self.sub_layers.get(name)
         if not layer:
@@ -38,29 +69,35 @@ class PointDeconfLayer(tf.keras.layers.Layer):
             self.sub_layers[name] = layer
         return layer(inputs, training=training)
 
-    def dense(self, inputs, units, name, training, activation="relu"):
+    def dense(self, inputs, units, name, training):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.Dense(units, activation=activation, name=name)
+            layer = tf.keras.layers.Dense(units, activation="linear", name=name,
+                    kernel_regularizer=kernel_regularizer,
+                    bias_regularizer=bias_regularizer,
+                    kernel_initializer=kernel_initializer,
+                    bias_initializer=bias_initializer)
             self.sub_layers[name] = layer
 
         x = layer(inputs, training=training)
         x = self.batch_normalization(x, training=training, name=name+"-BN")
+        x = self.relu(x, training=training, name=name+"-relu")
         x = self.dropout(x, self.dropout_rate, name=name+"-dropout", training=training)
         return x
 
     def call(self, inputs, training, **kwargs):
         points = inputs[1]
         is_training = training
-        tag = "PointDeconfLayer-"
+        tag = "PointDeconvLayer-"
 
         output = self.dense(points, self.out_channels, tag + 'dense', is_training)
 
         return inputs[0], output
 
+
 @register_conf(name="point-conv", scope="layer", conf_func="self")
 class PointConvLayer(tf.keras.layers.Layer):
-    def __init__(self, npoint, nsample, in_channel, mlp, bandwidth, group_all, **kwargs):
+    def __init__(self, npoint, nsample, in_channel, mlp, bandwidth, group_all, use_features=True, **kwargs):
         super(PointConvLayer, self).__init__()
         self.npoint = npoint
         self.nsample = nsample
@@ -68,6 +105,7 @@ class PointConvLayer(tf.keras.layers.Layer):
         self.mlp = mlp
         self.bandwidth = bandwidth
         self.group_all = group_all
+        self.use_features = use_features
         self.sub_layers = dict()
 
     def batch_normalization(self, inputs, name, training):
@@ -80,7 +118,11 @@ class PointConvLayer(tf.keras.layers.Layer):
     def conv1d(self, inputs, filters, kernel_size, name, training):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.Conv1D(filters, kernel_size, name=name, data_format='channels_first')
+            layer = tf.keras.layers.Conv1D(filters, kernel_size, name=name, data_format='channels_first',
+                    kernel_regularizer=kernel_regularizer,
+                    bias_regularizer=bias_regularizer,
+                    kernel_initializer=kernel_initializer,
+                    bias_initializer=bias_initializer)
             self.sub_layers[name] = layer
 
         x = layer(inputs, training=training)
@@ -90,7 +132,11 @@ class PointConvLayer(tf.keras.layers.Layer):
     def conv2d(self, inputs, filters, kernel_size, name, training):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.Conv2D(filters, kernel_size, name=name, data_format='channels_first')
+            layer = tf.keras.layers.Conv2D(filters, kernel_size, name=name, data_format='channels_first',
+                    kernel_regularizer=kernel_regularizer,
+                    bias_regularizer=bias_regularizer,
+                    kernel_initializer=kernel_initializer,
+                    bias_initializer=bias_initializer)
             self.sub_layers[name] = layer
 
         x = layer(inputs, training=training)
@@ -185,7 +231,8 @@ class PointConvLayer(tf.keras.layers.Layer):
             grouped_idx: grouped points index, [B, S, nsample]
         """
         sqrdists = PointConvLayer.square_distance(new_xyz, xyz)
-        _, grouped_idx = tf.nn.top_k(sqrdists, nsample, sorted=False)
+        _, grouped_idx = tf.nn.top_k(-sqrdists, nsample, sorted=False)
+        # grouped_idx = tf.sort(grouped_idx)  # XXX: sort for check
         return grouped_idx
 
     @staticmethod
@@ -250,7 +297,11 @@ class PointConvLayer(tf.keras.layers.Layer):
     def dense(self, inputs, units, name, training, activation="relu"):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.Dense(units, activation=activation, name=name)
+            layer = tf.keras.layers.Dense(units, activation=activation, name=name,
+                    kernel_regularizer=kernel_regularizer,
+                    bias_regularizer=bias_regularizer,
+                    kernel_initializer=kernel_initializer,
+                    bias_initializer=bias_initializer)
             self.sub_layers[name] = layer
 
         x = layer(inputs, training=training)
@@ -260,9 +311,11 @@ class PointConvLayer(tf.keras.layers.Layer):
     def call(self, inputs, training, **kwargs):
         xyz = inputs[0]  # [B, N, C=3]
         points = inputs[1]  # [B, N, D]
+        if not self.use_features:
+            points = None
 
         is_training = training
-        tag = "PointConfLayer-"
+        tag = "PointConvLayer-"
 
         xyz_density = PointConvLayer.compute_density(xyz, self.bandwidth)  # [B, N]
         density_scale = self.density_net(xyz_density, [8, 8], tag + "densitynet", is_training)  # [B, 1, N]
@@ -288,3 +341,29 @@ class PointConvLayer(tf.keras.layers.Layer):
         new_points = self.relu(new_points, tag + "linear-relu", is_training)
 
         return new_xyz, new_points
+
+
+@register_conf(name="pointconv-output", scope="layer", conf_func="self")
+class PointconvOutputLayer(tf.keras.layers.Layer):
+    def __init__(self, class_count, use_position=False, label=None, **kwargs):
+        super(PointconvOutputLayer, self).__init__(name=label)
+        self.use_position = use_position
+        self.dense = tf.keras.layers.Dense(
+            class_count,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            kernel_initializer=kernel_initializer,
+            bias_initializer=bias_initializer)
+        self.output_size = kwargs['output_size']
+
+    def call(self, inputs, training, *args, **kwargs):
+        x = tf.concat(inputs, axis=-1) if self.use_position else inputs[1]  # (B, N, F) or (B, N, F + 3)
+        x = tf.tile(tf.expand_dims(x, 1), [1, self.output_size, 1])
+        if not training:
+            x = tf.reduce_mean(x, axis=1, keepdims=True)  # (B, N, F) for training and (B, 1, F) for testing
+        x = self.dense(x, *args, **kwargs)  # (B, N/1, class_count)
+        return x
+
+    def count_params(self):
+        return self.dense.count_params()
+
