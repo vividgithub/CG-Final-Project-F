@@ -41,6 +41,7 @@ def parse_path(*paths):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
     parser = argparse.ArgumentParser(description=CLI_DESCRIPTION)
     parser.add_argument("model_config", type=str, help="The path for model configuration")
     parser.add_argument("-d", "--data", type=str, default="", help=DATA_OPTIONS_DESCRIPTION)
