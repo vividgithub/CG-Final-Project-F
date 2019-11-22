@@ -200,57 +200,6 @@ def net_from_config(model_conf, data_conf):
 
         outputs = x
         return tf.keras.Model(inputs=inputs, outputs=outputs)
-    elif net_conf["structure"] == "graph":
-        layer_confs = net_conf["layers"]
-        graph_conf = net_conf["graph"]
-
-        # Generate all the intermediate nodes and use label to map them
-        nodes = []
-        name_to_nodes = dict()
-        for conf in layer_confs:
-            node_name = conf.get("label", None)  # Use label to denote the layer
-            node = IntermediateLayerGraphNode(layer_from_config(conf, model_conf, data_conf))
-            nodes.append(node)
-            if node_name is not None:
-                assert node_name not in name_to_nodes, f"Layer name \"{node_name}\" conflict, check your labels"
-                name_to_nodes[node_name] = node
-
-        # Get the input node and output node
-        input_node = InputGraphNode(inputs=inputs)
-        output_node = OutputGraphNode()
-        assert "input" not in name_to_nodes and "output" not in name_to_nodes, \
-            f"Cannot name label of a layer to \"input\" or \"output\", check your layer labels"
-        name_to_nodes["input"] = input_node
-        name_to_nodes["output"] = output_node
-
-        # Get the graph
-        link_pattern = re.compile(r"[-]+>")  # ->, -->, --->, etc
-        for s in graph_conf:
-            logger.log(f"Analysing link \"{s}\"")
-            n = re.split(link_pattern, s)  # Split
-            n = [x.strip() for x in n]  # Remove space
-            for i, node_name in enumerate(n):
-                # Convert node_name(or index) to a node
-                try:
-                    node_index = int(node_name)
-                    node = nodes[node_index]
-                except ValueError:
-                    assert node_name in name_to_nodes, f"Cannot find layer with label {node_name}"
-                    node = name_to_nodes[node_name]
-                n[i] = node
-                if i > 0:
-                    n[i].add_dependency(n[i - 1])
-
-        for node in nodes + [output_node]:
-            if len(node.deps) == 0:
-                if isinstance(node, IntermediateLayerGraphNode):
-                    logger.log(f"The node {node._layer} is isolated, please check your graph "
-                               f"definitions", color="yellow")
-                else:
-                    logger.log("Output node is not linked", color="yellow")
-
-        # Generate the network
-        return tf.keras.Model(inputs=inputs, outputs=output_node.value())
     else:
         assert False, "\"{}\" is currently not supported".format(net_conf["structure"])
 
@@ -298,18 +247,19 @@ class ModelRunner:
         # the model_conf's last output layer is output-conditional-segmentation
         train_dataset = test_dataset = None
         if self.data_conf["task"] == "classification" and \
-                self.model_conf["net"]["layers"][-1]["name"] == "output-conditional-segmentation":
+                self.model_conf["net"]["layers"][-1]["name"] == "output-segmentation-and-semantic-label":
             layer_conf = self.model_conf["net"]["layers"][-1]
             assert "output_size" in layer_conf, "The dataset is classification dataset " \
                                                 "while the model configuration is segmentation. " \
                                                 "Cannot find \"output_size\" to transform the " \
                                                 "classification dataset to segmentation task"
-            seg_output_size = layer_conf["output_size"]
+            #seg_output_size = layer_conf["output_size"]
             # Transform function convert the label with (B, 1) to (B, N) where N is the last layer's point output size
-            transform_func = (lambda points, label: (points, tf.tile(label, (1, seg_output_size))))
-            train_dataset = self.train_dataset.map(transform_func)
+            #transform_func = (lambda points, label: (points, tf.tile(label, (1, seg_output_size))))
+            #train_dataset = self.train_dataset.map(transform_func)
+            train_dataset = self.train_dataset
             test_dataset = self.test_dataset
-            logger.log("Convert classification to segmentation task with output_size={}".format(seg_output_size))
+            #logger.log("Convert classification to segmentation task with output_size={}".format(seg_output_size))
         else:
             train_dataset, test_dataset = self.train_dataset, self.test_dataset
 
