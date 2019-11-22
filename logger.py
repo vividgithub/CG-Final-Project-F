@@ -1,5 +1,11 @@
+#!/usr/bin/python
+# -*- coding: UTF-8 -*-
 import datetime
 import inspect
+import sys, io
+
+# Change default encoding to utf8  
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf8') 
 
 _color_code = {
     "red": "\x1b[31m",
