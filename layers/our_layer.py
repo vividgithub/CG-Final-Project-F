@@ -293,7 +293,7 @@ class FPLayerCore(tf.keras.layers.Layer):
                                       [1,1],
                                       i,
                                       padding='VALID', 
-                                      stride=[1,1],
+                                      stride=[1,1]
                                       )
         new_points1 = tf.squeeze(new_points1, [2])  # B,ndataset1,mlp[-1]
         return new_points1
