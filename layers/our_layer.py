@@ -1,4 +1,10 @@
 import tensorflow as tf
+import os
+import sys
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(ROOT_DIR, 'tf_ops/sampling'))
+sys.path.append(os.path.join(ROOT_DIR, 'tf_ops/grouping'))
+sys.path.append(os.path.join(ROOT_DIR, 'tf_ops/3d_interpolation'))
 from tf_sampling import farthest_point_sample, gather_point
 from tf_grouping import query_ball_point, group_point, knn_point
 from tf_interpolate import three_nn, three_interpolate
@@ -419,7 +425,7 @@ class DropOutLayer(tf.keras.layers.Layer):
         drop_out_layer = tf.keras.Dropout(rate = self.keep_prob, noise_shape = self.noise_shape)
         if self.is_training:
             outputs = drop_out_layer(inputs, training = self.is_training)
-        else
+        else:
             outputs = inputs
         return outputs
 
