@@ -52,10 +52,6 @@ def learning_rate_from_config(learning_rate_conf):
     """
     return object_from_conf(learning_rate_conf, scope="learning_rate")
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 19d9b9f12e41e41b67a13373a630914fe6407fd7
 def net_from_config(model_conf, data_conf):
     """
     Generate a keras network from configuration dict
@@ -103,18 +99,77 @@ def net_from_config(model_conf, data_conf):
             layer_conf = net_conf["layers"][idx]
             logger.log(f"In constructing: {layer_conf}")
             layer = layer_from_config(layer_conf, model_conf, data_conf)
-            output = layer(xyz_points_list[-1][0])
+            output = layer(xyz_points_list[-1][0], xyz_points_list[-1][1])
+            xyz_points_list.append([output[0], output[1]])
 
+        sem_list = [xyz_points_list[-1][1]]
 
-
-        for layer_conf in net_conf["layers"]:
+        # process FP layers
+        for idx in range(4, 8):
+            layer_conf = net_conf["layers"][idx]
             logger.log(f"In constructing: {layer_conf}")
             layer = layer_from_config(layer_conf, model_conf, data_conf)
-            logger.log(f"Input={x}")
-            x = layer(x)
-            logger.log(f"Output={x}")
+            output = layer(xyz_points_list[7-idx][0], xyz_points_list[8-idx][0], xyz_points_list[7-idx][1], sem_list[-1])
+            sem_list.append(output)
 
-        outputs = x
+        layer_conf = net_conf["layers"][8]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        net_sem = layer(sem_list[-1])
+
+        layer_conf = net_conf["layers"][9]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        net_sem_cache = layer(sem_list[-1])
+
+        ins_list = [xyz_points_list[-1][1]]
+
+        # process FP layers
+        for idx in range(10, 14):
+            layer_conf = net_conf["layers"][idx]
+            logger.log(f"In constructing: {layer_conf}")
+            layer = layer_from_config(layer_conf, model_conf, data_conf)
+            output = layer(xyz_points_list[7-idx][0], xyz_points_list[8-idx][0], xyz_points_list[7-idx][1], ins_list[-1])
+            ins_list.append(output)
+
+        layer_conf = net_conf["layers"][14]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        net_ins = layer(ins_list[-1])  
+
+        net_ins = net_ins + net_sem_cache       
+
+        for idx in range(15, 17):
+            layer_conf = net_conf["layers"][idx]
+            logger.log(f"In constructing: {layer_conf}")
+            layer = layer_from_config(layer_conf, model_conf, data_conf)
+            net_ins = layer(net_ins)
+
+        layer_conf = net_conf["layers"][17]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        adj_matrix = layer(net_ins)   
+
+        layer_conf = net_conf["layers"][18]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        nn_idx = layer(adj_matrix)         
+
+        layer_conf = net_conf["layers"][19]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        net_sem = layer(net_sem, nn_idx) 
+
+        for idx in range(20, 22):
+            layer_conf = net_conf["layers"][idx]
+            logger.log(f"In constructing: {layer_conf}")
+            layer = layer_from_config(layer_conf, model_conf, data_conf)
+            net_sem = layer(net_sem)   
+        
+        # concatenate two output tensors
+        # semantics label first
+        outputs = tf.concat([net_sem, net_ins], -1)
+
         return tf.keras.Model(inputs=inputs, outputs=outputs)
     else:
         assert False, "\"{}\" is currently not supported".format(net_conf["structure"])

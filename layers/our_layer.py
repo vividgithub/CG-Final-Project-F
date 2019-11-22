@@ -149,7 +149,7 @@ class SALayerCore(tf.keras.layers.Layer):
         layer = tf.keras.layers.BatchNormalization(momentum=0.9, name=name)
         return layer(inputs, training=training)
 
-    def call(self, xyz, points, name, **kwargs):
+    def call(self, xyz, points, **kwargs):
         data_format = 'channels_first' if self.use_nchw else 'channels_last'
 
         new_xyz, new_points, idx, grouped_xyz = self.sample_and_group(xyz, points)
