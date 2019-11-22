@@ -198,7 +198,8 @@ class FPLayerCore(tf.keras.layers.Layer):
                weight_decay=0.0,
                activation_fn="relu",
                is_dist=False,
-               initial_bias=0.0):
+               initial_bias=0.0,
+               ):
         """ 2D convolution with non-linear operation.
 
         Args:
@@ -293,7 +294,6 @@ class FPLayerCore(tf.keras.layers.Layer):
                                       i,
                                       padding='VALID', 
                                       stride=[1,1],
-                                      is_training=self.is_training,
                                       )
         new_points1 = tf.squeeze(new_points1, [2])  # B,ndataset1,mlp[-1]
         return new_points1
