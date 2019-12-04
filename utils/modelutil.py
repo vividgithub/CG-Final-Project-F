@@ -2,11 +2,16 @@ import shutil
 import re
 import layers
 import tensorflow_core as tf
+import tensorflow
 import math
 from os import path, makedirs
 import logger
 from utils.kerasutil import ModelCallback
 from utils.confutil import object_from_conf, register_conf
+import tensorflow.keras.backend as K
+from tensorflow.python.client import device_lib
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # A fake call to register
 register_conf(name="adam", scope="optimizer", conf_func=lambda conf: tf.keras.optimizers.Adam(**conf))(None)
@@ -52,104 +57,6 @@ def learning_rate_from_config(learning_rate_conf):
     """
     return object_from_conf(learning_rate_conf, scope="learning_rate")
 
-
-class GraphNode:
-    """A class for representing a computation node in the graph. Use for generating"""
-    def __init__(self, deps=None):
-        """
-        Initialization of a graph node
-        :param deps: The dependencies graph node of this node. It make sure that all the dependencies node
-        has been evaluated before the evaluation of current node
-        """
-        self.deps = deps or []
-        self._value = None
-
-    def add_dependency(self, dep):
-        """
-        Add a dependency
-        :param dep: The dependency to add
-        """
-        self.deps.append(dep)
-
-    def value(self):
-        """
-        Get the evaluation value of this node
-        :return: The evaluation value
-        """
-        if self._value is not None:
-            return self._value
-
-        # Compute the dependencies
-        dep_values = [dep.value() for dep in self.deps]
-        self._value = self._compute(dep_values)
-        return self._value
-
-    def _compute(self, dep_values):
-        """
-        It determines how the value should be computed. Subclass should override this method
-        :param dep_values: The value of the dependencies
-        :return: The evaluation value
-        """
-        assert False, "The \"compute\" method of the GraphNode should not be called directly"
-        return 0
-
-
-class InputGraphNode(GraphNode):
-    """Representing the node of the graph input for the network"""
-    def __init__(self, inputs):
-        super(InputGraphNode, self).__init__([])  # No dependency
-        self._inputs = inputs
-
-    def _compute(self, dep_values):
-        return self._inputs
-
-
-class IntermediateLayerGraphNode(GraphNode):
-    """The intermediate computation node. It is usually a node wrapper for a keras layer"""
-    def __init__(self, layer, deps=None):
-        """
-        Initialization
-        :param layer: The keras computation layer, used to compute the evaluation value from the
-        dependencies
-        :param deps: The dependencies
-        """
-        super(IntermediateLayerGraphNode, self).__init__(deps)
-        self._layer = layer
-
-    def _compute(self, dep_values):
-        logger.log(f"Computing node for layer {self._layer}")
-        if len(dep_values) == 0:
-            # Case 1, zero dependency, this should not occur
-            assert False, f"No dependency for computing the layer {self._layer}, consider deleting it"
-        elif len(dep_values) == 1:
-            # Case 2, single dependency, call it directly
-            return self._layer(dep_values[0])
-        else:
-            num_outputs = [len(dep_value) if isinstance(dep_value, (list, tuple)) else 0 for dep_value in dep_values]
-            num_output = num_outputs[0]
-            assert all([x == num_outputs for x in num_outputs]), \
-                f"Cannot merge the dependencies since they have different number of outputs, num_outputs={num_outputs}"
-
-            if num_output == 0:
-                # Case 3, every dependencies generate only a single value, just concat them normally
-                concat_value = tf.keras.layers.concatenate(dep_values, axis=-1, name="Concat")
-            else:
-                # Case 4, every dependencies generate multiple values. We need to concat them one by one
-                # The values have been flattened before send into the layer
-                concat_value = tf.keras.layers.Lambda(
-                    lambda values: tuple([tf.concat(values[i::num_output], axis=-1) for i in range(num_output)]),
-                    name="Concat"
-                )(dep_values)
-
-            return self._layer(concat_value)
-
-
-class OutputGraphNode(IntermediateLayerGraphNode):
-    """The final output graph node representation of the network"""
-    def __init__(self, deps=None):
-        super(OutputGraphNode, self).__init__(layer=tf.keras.layers.Lambda(tf.identity, name="Output"), deps=deps)
-
-
 def net_from_config(model_conf, data_conf):
     """
     Generate a keras network from configuration dict
@@ -189,70 +96,102 @@ def net_from_config(model_conf, data_conf):
 
     inputs = tf.keras.Input(shape=(point_count, feature_size))
     if net_conf["structure"] == "sequence":
-        x =  inputs # Input layer
 
-        for layer_conf in net_conf["layers"]:
+        xyz_points_list = [[inputs[..., :3], inputs[..., 3:9]]]
+        true_ins_label = tensorflow.cast(inputs[..., 9], dtype = tensorflow.int32)
+        true_sem_label = tensorflow.cast(inputs[..., 10], dtype = tensorflow.int32)
+        
+        # process SA layers
+        for idx in range(4):
+            layer_conf = net_conf["layers"][idx]
             logger.log(f"In constructing: {layer_conf}")
             layer = layer_from_config(layer_conf, model_conf, data_conf)
-            logger.log(f"Input={x}")
-            x = layer(x)
-            logger.log(f"Output={x}")
+            output = layer(xyz_points_list[-1][0], xyz_points_list[-1][1])
+            xyz_points_list.append([output[0], output[1]])
 
-        outputs = x
-        return tf.keras.Model(inputs=inputs, outputs=outputs)
-    elif net_conf["structure"] == "graph":
-        layer_confs = net_conf["layers"]
-        graph_conf = net_conf["graph"]
+        sem_list = [xyz_points_list[-1][1]]
 
-        # Generate all the intermediate nodes and use label to map them
-        nodes = []
-        name_to_nodes = dict()
-        for conf in layer_confs:
-            node_name = conf.get("label", None)  # Use label to denote the layer
-            node = IntermediateLayerGraphNode(layer_from_config(conf, model_conf, data_conf))
-            nodes.append(node)
-            if node_name is not None:
-                assert node_name not in name_to_nodes, f"Layer name \"{node_name}\" conflict, check your labels"
-                name_to_nodes[node_name] = node
+        # process FP layers
+        for idx in range(4, 8):
+            layer_conf = net_conf["layers"][idx]
+            logger.log(f"In constructing: {layer_conf}")
+            layer = layer_from_config(layer_conf, model_conf, data_conf)
+            output = layer(xyz_points_list[7-idx][0], xyz_points_list[8-idx][0], xyz_points_list[7-idx][1], sem_list[-1])
+            sem_list.append(output)
 
-        # Get the input node and output node
-        input_node = InputGraphNode(inputs=inputs)
-        output_node = OutputGraphNode()
-        assert "input" not in name_to_nodes and "output" not in name_to_nodes, \
-            f"Cannot name label of a layer to \"input\" or \"output\", check your layer labels"
-        name_to_nodes["input"] = input_node
-        name_to_nodes["output"] = output_node
+        layer_conf = net_conf["layers"][8]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        net_sem = layer(sem_list[-1])
 
-        # Get the graph
-        link_pattern = re.compile(r"[-]+>")  # ->, -->, --->, etc
-        for s in graph_conf:
-            logger.log(f"Analysing link \"{s}\"")
-            n = re.split(link_pattern, s)  # Split
-            n = [x.strip() for x in n]  # Remove space
-            for i, node_name in enumerate(n):
-                # Convert node_name(or index) to a node
-                try:
-                    node_index = int(node_name)
-                    node = nodes[node_index]
-                except ValueError:
-                    assert node_name in name_to_nodes, f"Cannot find layer with label {node_name}"
-                    node = name_to_nodes[node_name]
-                n[i] = node
-                if i > 0:
-                    n[i].add_dependency(n[i - 1])
+        layer_conf = net_conf["layers"][9]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        net_sem_cache = layer(sem_list[-1])
 
-        for node in nodes + [output_node]:
-            if len(node.deps) == 0:
-                if isinstance(node, IntermediateLayerGraphNode):
-                    logger.log(f"The node {node._layer} is isolated, please check your graph "
-                               f"definitions", color="yellow")
-                else:
-                    logger.log("Output node is not linked", color="yellow")
+        ins_list = [xyz_points_list[-1][1]]
 
-        # Generate the network
-        return tf.keras.Model(inputs=inputs, outputs=output_node.value())
+        # process FP layers
+        for idx in range(10, 14):
+            layer_conf = net_conf["layers"][idx]
+            logger.log(f"In constructing: {layer_conf}")
+            layer = layer_from_config(layer_conf, model_conf, data_conf)
+            output = layer(xyz_points_list[13-idx][0], xyz_points_list[14-idx][0], xyz_points_list[13-idx][1], ins_list[-1])
+            ins_list.append(output)
+
+        layer_conf = net_conf["layers"][14]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        net_ins = layer(ins_list[-1])  
+
+        net_ins = net_ins + net_sem_cache  
+        #print(net_ins.get_shape())     
+
+        for idx in range(15, 17):
+            layer_conf = net_conf["layers"][idx]
+            logger.log(f"In constructing: {layer_conf}")
+            layer = layer_from_config(layer_conf, model_conf, data_conf)
+            net_ins = layer(net_ins)
+
+        layer_conf = net_conf["layers"][17]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        adj_matrix = layer(net_ins)   
+
+        layer_conf = net_conf["layers"][18]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        nn_idx = layer(adj_matrix)    
+
+        layer_conf = net_conf["layers"][19]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        net_sem = layer(net_sem, nn_idx) 
+
+        for idx in range(20, 22):
+            layer_conf = net_conf["layers"][idx]
+            logger.log(f"In constructing: {layer_conf}")
+            layer = layer_from_config(layer_conf, model_conf, data_conf)
+            net_sem = layer(net_sem) 
+        
+        layer_conf = net_conf["layers"][22]
+        logger.log(f"In constructing: {layer_conf}")
+        layer = layer_from_config(layer_conf, model_conf, data_conf)
+        losses = layer(net_ins, net_sem, true_ins_label, true_sem_label)
+
+        return tf.keras.Model(inputs=inputs, outputs=losses)
     else:
         assert False, "\"{}\" is currently not supported".format(net_conf["structure"])
+
+m = tf.keras.metrics.SparseCategoricalAccuracy()
+
+def my_accuracy(y_true, y_pred):
+    y_true = tf.transpose(y_true, [0, 2, 1])
+    # reshape in case it's in shape (num_samples, 1) instead of (num_samples,)
+    m.update_state(y_true, y_pred)
+    accuracy = m.result()
+    return accuracy
+
 
 
 class ModelRunner:
@@ -298,18 +237,19 @@ class ModelRunner:
         # the model_conf's last output layer is output-conditional-segmentation
         train_dataset = test_dataset = None
         if self.data_conf["task"] == "classification" and \
-                self.model_conf["net"]["layers"][-1]["name"] == "output-conditional-segmentation":
+                self.model_conf["net"]["layers"][-1]["name"] == "output-segmentation-and-semantic-label":
             layer_conf = self.model_conf["net"]["layers"][-1]
             assert "output_size" in layer_conf, "The dataset is classification dataset " \
                                                 "while the model configuration is segmentation. " \
                                                 "Cannot find \"output_size\" to transform the " \
                                                 "classification dataset to segmentation task"
-            seg_output_size = layer_conf["output_size"]
+            #seg_output_size = layer_conf["output_size"]
             # Transform function convert the label with (B, 1) to (B, N) where N is the last layer's point output size
-            transform_func = (lambda points, label: (points, tf.tile(label, (1, seg_output_size))))
-            train_dataset = self.train_dataset.map(transform_func)
+            #transform_func = (lambda points, label: (points, tf.tile(label, (1, seg_output_size))))
+            #train_dataset = self.train_dataset.map(transform_func)
+            train_dataset = self.train_dataset
             test_dataset = self.test_dataset
-            logger.log("Convert classification to segmentation task with output_size={}".format(seg_output_size))
+            #logger.log("Convert classification to segmentation task with output_size={}".format(seg_output_size))
         else:
             train_dataset, test_dataset = self.train_dataset, self.test_dataset
 
@@ -370,15 +310,17 @@ class ModelRunner:
         optimizer = optimizer_from_config(lr_schedule, control_conf["optimizer"])
 
         # Get the loss
-        loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, name="Loss")
+        #loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, name='loss')
+        #loss = my_loss_function
+
+        def MyLoss(y_true, y_pred):
+            return 0.0
 
         # Get the metrics
         # We add a logits loss in the metrics since the total loss will have regularization term
         metrics = [
-            tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
-            tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True, name="logits_loss")
+            my_accuracy
         ]
-
         # Get the batch size
         batch_size = control_conf["batch_size"]
 
@@ -410,11 +352,13 @@ class ModelRunner:
         model_callback = ModelCallback(train_step, validation_step, train_dataset, test_dataset,
                                        batch_size, save_dir(), infos=infos, step_offset=step_offset)
 
-        logger.log("Compile network, loss={}, metrics={}".format(loss, metrics))
-        net.compile(optimizer, loss=loss, metrics=metrics)
+        logger.log("Compile network, loss={}, metrics={}".format('MyLoss', metrics))
+        #net.compile(optimizer, loss=None)
+        net.compile(optimizer, loss=MyLoss, metrics=metrics)
 
         logger.log("Summary of the network:")
         net.summary(line_length=240, print_fn=lambda x: logger.log(x, prefix=False))
+
 
         logger.log("Begin training")
         net.fit(

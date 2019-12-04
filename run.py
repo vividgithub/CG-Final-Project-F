@@ -6,6 +6,8 @@ from os.path import expanduser, abspath, isdir, exists
 from os.path import join as join
 from os import getcwd as cwd
 from os import listdir, sep, makedirs
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from utils.datasetutil import load_dataset
 from utils.modelutil import ModelRunner
@@ -41,6 +43,7 @@ def parse_path(*paths):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
     parser = argparse.ArgumentParser(description=CLI_DESCRIPTION)
     parser.add_argument("model_config", type=str, help="The path for model configuration")
     parser.add_argument("-d", "--data", type=str, default="", help=DATA_OPTIONS_DESCRIPTION)
@@ -53,7 +56,7 @@ if __name__ == "__main__":
     root_save_dir = parse_path(args.save) if args.save else ""
 
     mode = args.mode
-    assert mode in ["new", "resume", "resume-copy"], f"Invalid mode \"{mode}\""
+    assert mode in ["new", "resume", "resume-copy", "predict"], f"Invalid mode \"{mode}\""
 
     assert model_conf_path.endswith(".pyconf"), \
         f"The model configuration \"{model_conf_path}\" is not a valid pyconf file"
@@ -116,5 +119,6 @@ if __name__ == "__main__":
     log(f"Model name: {model_name}")
     model_runner = ModelRunner(model_conf, data_conf, model_name, save_dir, train_dataset, test_dataset, mode=mode)
 
+    
     log("Running model")
     model_runner.train()

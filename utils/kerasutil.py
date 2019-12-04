@@ -107,7 +107,10 @@ class ModelCallback(tf.keras.callbacks.Callback):
 
     def _on_validation(self, batch, logs):
         # Get the validation results
-        metrics_values = self.model.evaluate(self.test_dataset, verbose=0)
+        #metrics_values = self.model.evaluate(self.test_dataset, verbose=0)
+        metrics_values = self.model.test_on_batch(self.test_dataset)
+
+        
         results = {name: value for name, value in zip(self.model.metrics_names, metrics_values)}
         results_output = ", ".join(["{}:{}".format(name, value) for name, value in results.items()])
         logger.log("Evaluating validation dataset results: {{{}}}".format(results_output), prefix=False, color="blue")
@@ -137,6 +140,7 @@ class ModelCallback(tf.keras.callbacks.Callback):
             fout.write("\n".join(["{} = {}".format(k, v) for k, v in infos.items()]))  # Write the result
 
         logger.log("On batch {}/{}, END EVALUATION".format(batch, self.train_step), color="blue")
+        
 
     def _on_stop(self, batch, logs):
         logger.log("On batch {}/{}, stop".format(batch, self.train_step))
