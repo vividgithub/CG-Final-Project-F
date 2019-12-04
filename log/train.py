@@ -18,13 +18,15 @@ import tf_util
 import modelnet_dataset
 import modelnet_h5_dataset
 
+from pointnet_util import sample_and_group
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 0]')
 parser.add_argument('--model', default='pointnet2_cls_ssg', help='Model name [default: pointnet2_cls_ssg]')
 parser.add_argument('--log_dir', default='log', help='Log dir [default: log]')
 parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
 parser.add_argument('--max_epoch', type=int, default=251, help='Epoch to run [default: 251]')
-parser.add_argument('--batch_size', type=int, default=16, help='Batch Size during training [default: 16]')
+parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 16]')
 parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
 parser.add_argument('--momentum', type=float, default=0.9, help='Initial learning rate [default: 0.9]')
 parser.add_argument('--optimizer', default='adam', help='adam or momentum [default: adam]')
@@ -45,7 +47,7 @@ OPTIMIZER = FLAGS.optimizer
 DECAY_STEP = FLAGS.decay_step
 DECAY_RATE = FLAGS.decay_rate
 
-#MODEL = importlib.import_module(FLAGS.model) # import network module
+MODEL = importlib.import_module(FLAGS.model) # import network module
 #MODEL_FILE = os.path.join(ROOT_DIR, 'models', FLAGS.model+'.py')
 LOG_DIR = FLAGS.log_dir
 if not os.path.exists(LOG_DIR): os.mkdir(LOG_DIR)
@@ -98,6 +100,14 @@ def train_one_epoch():
         cur_batch_label[0:bsize] = batch_label
 
 
+        ####
+        is_training_pl=True
+        pointclouds_pl = cur_batch_data
+        labels_pl = cur_batch_label
+        #pred, end_points = MODEL.get_model(pointclouds_pl, is_training_pl, bn_decay=bn_decay)
+        new_xyz, new_points, idx, grouped_xyz = sample_and_group(512, 0.2, 32, pointclouds_pl, None)
+        ######
+
 
         total_seen += bsize
 
@@ -108,7 +118,7 @@ def train_one_epoch():
             total_seen = 0
             loss_sum = 0
         batch_idx += 1
-
+        print(batch_label)
     TRAIN_DATASET.reset()
 
 if __name__ == "__main__":
