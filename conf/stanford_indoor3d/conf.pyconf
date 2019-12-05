@@ -1,0 +1,52 @@
+{
+    "dataset": {
+        "name": "stanford_indoor3d",
+        "train_load_policy": "normal",
+        "test_load_policy": "normal",
+        "train_transforms": [
+            {"name": "repeat"},
+            {"name": "shuffle", "buffer_multiplier": 4},
+            {"name": "clip-feature", "c": 3},
+            {"name": "scaling", "range": (1.0, 1.1), "anisotropic": False},
+            {"name": "rotation", "policy": "euler", "range": [(0.0, 0.0), (0.0, 3.1415926), (0.0, 0.0)]},
+            "------------",
+            {"name": "sampling", "sample_num": 1024, "policy": "random-gauss", "stddev": 128, "range": (1024, 1024)}
+        ],
+        "test_transforms": [
+            {"name": "clip-feature", "c": 3},
+            "------------",
+            {"name": "sampling", "sample_num": 1024, "policy": "random-gauss", "stddev": 128, "range": (1024, 1024)}
+        ]
+    },
+    "net": {
+        "structure": "sequence",
+        "layers": [
+            {"name": "data-split", "label": "data-split"},
+            #-----------------------------------------------------------------------------
+            {"name": "conv-xconv", "k": 8, "d": 1, "c": 16 * 3, "cpf": 24, "depth_multiplier": 4, "sampling": "random", "sorting_method": None, "with_global": False},
+            {"name": "pooling-xconv", "k": 12, "d": 2, "p": 384, "c": 32 * 3, "cpf": 12, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
+            {"name": "pooling-xconv", "k": 16, "d": 2, "p": 128, "c": 64 * 3, "cpf": 24, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": False},
+            {"name": "pooling-xconv", "k": 16, "d": 3, "p": 128, "c": 128 * 3, "cpf": 48, "depth_multiplier": 2, "sampling": "random", "sorting_method": None, "with_global": True},
+            {"name": "feature-reshape", "channels": [128 * 3, 64 * 3], "dropout": [0.0, 0.8]},
+            #-----------------------------------------------------------------------------
+            {"name": "output-conditional-segmentation", "output_size": 128}  # Indicate the output is (B, N, @class_count) instead of (B, @class_count)
+        ]
+    },
+    "control": {
+        "validation_step": 500,
+        "tensorboard_sync_step": 100,
+        "train_epoch": 1024,
+        "batch_size": 128,
+        "learning_rate": {
+            "name": "exponential_decay",
+            "initial_learning_rate": 0.01,
+            "decay_steps": 8000,
+            "decay_rate": 0.5,
+            "staircase": True
+        },
+        "optimizer": {
+            "name": "adam",
+            "epsilon": 1e-2
+        }
+    }
+}

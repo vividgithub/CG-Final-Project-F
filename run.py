@@ -107,12 +107,28 @@ if __name__ == "__main__":
 
     # Get the data conf
     train_dataset, test_dataset, data_conf = load_dataset(data_dir, model_conf)
-
     # Initialize the ModelRunner
     model_name = model_conf_path.split(sep)[-1]  # Get the last component of the path
     model_name = model_name[:model_name.rfind(".")]  # Remove the .pyconf
     model_name = "".join([x.capitalize() for x in model_name.split("_")])  # Move lower case to camel case
 
+    '''
+    with open("param.json", "a") as f:
+        
+        f.write("model_conf: " + str(model_conf) + "\n")
+        f.write(str(type(model_conf)) + "\n")
+        f.write("data_conf: " + str(data_conf) + "\n")
+        f.write(str(type(data_conf)) + "\n")
+        f.write("model_name: " + str(model_name) + "\n")
+        f.write(str(type(model_name)) + "\n")
+        f.write("save_dir: " + str(save_dir) + "\n")
+        f.write(str(type(save_dir)) + "\n")
+        f.write("train_dataset: " + str(train_dataset) + "\n")
+        f.write(str(type(train_dataset)) + "\n")
+        
+        f.write("test_dataset: " + str(test_dataset) + "\n")
+        f.write(str(type(test_dataset)) + "\n")
+    '''
     log(f"Model name: {model_name}")
     model_runner = ModelRunner(model_conf, data_conf, model_name, save_dir, train_dataset, test_dataset, mode=mode)
 

@@ -1,0 +1,14 @@
+<class 'dict'>
+data_conf: {'type': {'name': 'dataset-h5', 'train_file': 'train.h5', 'test_file': 'test.h5'}, 'task': 'classification', 'feature_size': 6, 'point_count': 2048, 'class_count': 40, 'labels': ['airplane', 'bathtub', 'bed', 'bench', 'bookshelf', 'bottle', 'bowl', 'car', 'chair', 'cone', 'cup', 'curtain', 'desk', 'door', 'dresser', 'flower_pot', 'glass_box', 'guitar', 'keyboard', 'lamp', 'laptop', 'mantel', 'monitor', 'night_stand', 'person', 'piano', 'plant', 'radio', 'range_hood', 'sink', 'sofa', 'stairs', 'stool', 'table', 'tent', 'toilet', 'tv_stand', 'vase', 'wardrobe', 'xbox'], 'train': {'size': 9840}, 'test': {'size': 2468}}
+<class 'dict'>
+model_name: PointCnn
+<class 'str'>
+save_dir: E:\Computer_Graphics\PointCloud_seg\Models\ModelNet40-2048
+<class 'str'>
+train_dataset: <DatasetV1Adapter shapes: ((None, None, 3), (None, 1)), types: (tf.float32, tf.int64)>
+<class 'tensorflow.python.data.ops.dataset_ops.DatasetV1Adapter'>
+test_dataset: <DatasetV1Adapter shapes: ((None, None, 3), (None, 1)), types: (tf.float32, tf.int64)>
+<class 'tensorflow.python.data.ops.dataset_ops.DatasetV1Adapter'>
+mode: new
+<class 'str'>test_dataset: <DatasetV1Adapter shapes: ((None, None, 3), (None, 1)), types: (tf.float32, tf.int64)>
+<class 'tensorflow.python.data.ops.dataset_ops.DatasetV1Adapter'>

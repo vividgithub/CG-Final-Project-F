@@ -1,6 +1,7 @@
 import shutil
 import re
 import layers
+from tensorflow import keras
 import tensorflow_core as tf
 import math
 from os import path, makedirs
@@ -372,7 +373,7 @@ class ModelRunner:
         # Get the loss
         loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, name="Loss")
 
-        # Get the metrics
+        # Get the metrics #测度
         # We add a logits loss in the metrics since the total loss will have regularization term
         metrics = [
             tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
@@ -413,6 +414,8 @@ class ModelRunner:
         logger.log("Compile network, loss={}, metrics={}".format(loss, metrics))
         net.compile(optimizer, loss=loss, metrics=metrics)
 
+        net.summary()
+        '''
         logger.log("Summary of the network:")
         net.summary(line_length=240, print_fn=lambda x: logger.log(x, prefix=False))
 
@@ -424,3 +427,4 @@ class ModelRunner:
             callbacks=[tensorboard_callback, model_callback],
             shuffle=False  # We do the shuffle ourself
         )
+        '''

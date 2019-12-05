@@ -76,7 +76,7 @@ def load_dataset_h5(dir, data_conf, train_load_policy="normal", test_load_policy
         f = h5py.File(filepath)
         if policy == "normal":
             for points, label in zip(f["data"], f["label"]):
-                yield points, label
+                yield points, label  # shape(4096, 9),(4096, )
         else:
             assert False, "random policy is not supported"
         f.close()
@@ -87,7 +87,7 @@ def load_dataset_h5(dir, data_conf, train_load_policy="normal", test_load_policy
 
     point_count = data_conf.get("point_count", None)
     feature_size = data_conf.get("feature_size", None)
-    output_shapes = ((point_count, feature_size), (1,))
+    output_shapes = ((point_count, feature_size), (point_count,))
 
     return (
         tf.data.Dataset.from_generator(train_gen, output_types=output_types, output_shapes=output_shapes),
