@@ -422,5 +422,5 @@ class ModelRunner:
             verbose=0,
             steps_per_epoch=train_step,
             callbacks=[tensorboard_callback, model_callback],
-            shuffle=False  # We do the shuffle ourself
+            shuffle=True  # We do the shuffle ourself
         )

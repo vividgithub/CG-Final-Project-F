@@ -1,14 +1,36 @@
 import tensorflow as tf
 from utils.confutil import register_conf
 from tf_ops.sampling.tf_sampling import farthest_point_sample
+import sys
+import logger
 
 
-kernel_regularizer = tf.keras.regularizers.L1L2(l2=1e-4)
-bias_regularizer = tf.keras.regularizers.L1L2(l2=1e-4)
+kernel_regularizer = None
+bias_regularizer = None
 kernel_initializer = tf.keras.initializers.he_uniform()
 bias_initializer = tf.keras.initializers.he_uniform()
 
 
+# A dummy layer for setting arguments of other layers
+@register_conf(name="pointconv-global-settings", scope="layer", conf_func="self")
+class GlobalSetting(tf.keras.layers.Layer):
+    def __init__(self, weight_decay=None, decay_on_bias=True, kernel_init=None, bias_init=None, **kwargs):
+        global kernel_regularizer, bias_regularizer, kernel_initializer, bias_initializer
+        super(GlobalSetting, self).__init__()
+        if weight_decay is not None:
+            kernel_regularizer = tf.keras.regularizers.L1L2(l2=weight_decay)
+            if decay_on_bias:
+                bias_regularizer = kernel_regularizer
+        if kernel_init is not None:
+            kernel_initializer = tf.keras.initializers.__dict__[kernel_init]
+        if bias_init is not None:
+            kernel_initializer = tf.keras.initializers.__dict__[bias_init]
+
+    def call(self, inputs, *args, **kwargs):
+        return inputs
+
+
+# A layer for debugging intermediate outputs
 @register_conf(name="print", scope="layer", conf_func="self")
 class PrintLayer(tf.keras.layers.Layer):
     def __init__(self, points=False, features=True, **kwargs):
@@ -17,7 +39,6 @@ class PrintLayer(tf.keras.layers.Layer):
         self.features = features
 
     def call(self, inputs, *args, **kwargs):
-        import sys, logger
         outputs = [self.points, self.features]
         for name, input, output in zip(("points", "features"), inputs, outputs):
             if output:
@@ -51,7 +72,7 @@ class PointDeconvLayer(tf.keras.layers.Layer):
     def batch_normalization(self, inputs, name, training):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.BatchNormalization(epsilon=1e-5, momentum=0.1, name=name)
+            layer = tf.keras.layers.BatchNormalization(epsilon=1e-5, momentum=0.9, name=name)
             self.sub_layers[name] = layer
         return layer(inputs, training=training)
 
@@ -111,7 +132,7 @@ class PointConvLayer(tf.keras.layers.Layer):
     def batch_normalization(self, inputs, name, training):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.BatchNormalization(epsilon=1e-5, momentum=0.1, name=name, axis=1)
+            layer = tf.keras.layers.BatchNormalization(epsilon=1e-5, momentum=0.9, name=name, axis=1)
             self.sub_layers[name] = layer
         return layer(inputs, training=training)
 

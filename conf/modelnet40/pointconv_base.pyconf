@@ -1,0 +1,45 @@
+{
+    "dataset": {
+        "name": "ModelNet40-2048",
+        "train_load_policy": "normal",
+        "test_load_policy": "normal",
+        "train_transforms": [
+            {"name": "repeat"}
+        ],
+        "test_transforms": [
+        ]
+    },
+    "net": {
+        "structure": "sequence",
+        "extend_feature": "none",
+        "layers": [
+            {"name": "data-split", "label": "data-split"},
+            #-----------------------------------------------------------------------------
+            {"name": "point-conv", "npoint": 512, "nsample": 32, "in_channel": 3, "mlp": [64, 64, 128], "bandwidth": 0.1, "group_all": False, "use_features": False},
+            {"name": "point-conv", "npoint": 128, "nsample": 64, "in_channel": 128 + 3, "mlp": [128, 128, 256], "bandwidth": 0.2, "group_all": False},
+            {"name": "point-conv", "npoint": 1, "nsample": None, "in_channel": 256 + 3, "mlp": [256, 512, 1024], "bandwidth": 0.4, "group_all": True},
+            {"name": "point-reshape", "shape": 1024},
+            {"name": "point-deconv", "out_channels": 512},
+            {"name": "point-deconv", "out_channels": 256},
+            #-----------------------------------------------------------------------------
+            {"name": "pointconv-output", "output_size": 1}
+        ]
+    },
+    "control": {
+        "validation_step": 615,
+        "tensorboard_sync_step": 100,
+        "train_epoch": 400,
+        "batch_size": 16,
+        "learning_rate": {
+            "name": "exponential_decay",
+            "initial_learning_rate": 0.01,
+            "decay_steps": 18450,
+            "decay_rate": 0.5,
+            "staircase": True
+        },
+        "optimizer": {
+            "name": "sgd",
+            "momentum": 0.9
+        }
+    }
+}
