@@ -4,6 +4,7 @@ import h5py
 from logger import log
 from utils import ioutil
 from utils.confutil import register_conf, object_from_conf
+import numpy as np
 
 
 def apply_transforms(dataset, confs, batch_size):
@@ -75,11 +76,19 @@ def load_dataset_h5(dir, data_conf, train_load_policy="normal", test_load_policy
     def _h5_generator(filepath, policy):
         f = h5py.File(filepath)
         if policy == "normal":
-            for points, label in zip(f["data"], f["label"]):
-                yield points, label  # shape(4096, 9),(4096, )
+            for points, label, seglabel in zip(f["data"],  f["pid"], f["seglabel"] ):
+
+                yield points, label, seglabel# shape(4096, 9),(4096, ),(4096, )
         else:
             assert False, "random policy is not supported"
         f.close()
+
+    # def _train_h5_generator(filepath, policy):
+    #     f = h5py.File(filepath)
+    #     for points, label, seglabel in zip(f["data"], f["pid"], f["seglabel"]):
+    #         yield points, label, seglabel  # shape(4096, 9),(4096, ),(4096, )
+
+    #     f.close()
 
     train_gen = lambda: _h5_generator(train_filepath, train_load_policy)
     test_gen = lambda: _h5_generator(test_filepath, test_load_policy)
@@ -87,11 +96,24 @@ def load_dataset_h5(dir, data_conf, train_load_policy="normal", test_load_policy
 
     point_count = data_conf.get("point_count", None)
     feature_size = data_conf.get("feature_size", None)
-    output_shapes = ((point_count, feature_size), (point_count,))
+    batch_size = 80
+    # output_shapes = ([batch_size, point_count, feature_size], [batch_size, point_count], [batch_size, point_count])
+    # output_shapes = (batch_size, point_count, feature_size + 2)
+
+    f = h5py.File(train_filepath)
+    points, label, seglabel = f["data"],  f["pid"], f["seglabel"]
+
+    train_dataset = tf.data.Dataset.from_tensor_slices((points, np.append(np.array(label)[:,np.newaxis,:], np.array(seglabel)[:,np.newaxis,:], axis = 1)))
+    f.close()
+
+    f = h5py.File(test_filepath)
+    points, label, seglabel = f["data"],  f["pid"], f["seglabel"]
+    test_dataset = tf.data.Dataset.from_tensor_slices((points, np.append(np.array(label)[:,np.newaxis,:], np.array(seglabel)[:,np.newaxis,:], axis = 1)))
+    f.close()
 
     return (
-        tf.data.Dataset.from_generator(train_gen, output_types=output_types, output_shapes=output_shapes),
-        tf.data.Dataset.from_generator(test_gen, output_types=output_types, output_shapes=output_shapes)
+        train_dataset,
+        test_dataset
     )
 
 
@@ -116,10 +138,15 @@ def load_dataset(dir, model_conf):
     train_dataset, test_dataset = loaders[conf["type"]["name"]](dir, conf, **model_conf)
     batch_size = model_conf["control"]["batch_size"]
 
-    train_dataset = apply_transforms(train_dataset, model_conf["dataset"].get("train_transforms", []), batch_size)
-    test_dataset = apply_transforms(test_dataset, model_conf["dataset"].get("test_transforms", []), batch_size)
-
+    # train_dataset = pass
+    # train_dataset = apply_transforms(train_dataset, model_conf["dataset"].get("train_transforms", []), batch_size)
+    # test_dataset = apply_transforms(test_dataset, model_conf["dataset"].get("test_transforms", []), batch_size)
+    print(train_dataset)
+    print(test_dataset)
+    exit()
     return train_dataset, test_dataset, conf
+
+
 
 
 def dataset_transform(func):
