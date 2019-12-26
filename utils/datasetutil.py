@@ -73,36 +73,11 @@ def load_dataset_h5(dir, data_conf, train_load_policy="normal", test_load_policy
     log("Loading train file=\"{}\", policy={}".format(train_filepath, train_load_policy))
     log("Loading test file \"{}\", policy={}".format(test_filepath, test_load_policy))
 
-    def _h5_generator(filepath, policy):
-        f = h5py.File(filepath)
-        if policy == "normal":
-            for points, label, seglabel in zip(f["data"],  f["pid"], f["seglabel"] ):
-
-                yield points, label, seglabel# shape(4096, 9),(4096, ),(4096, )
-        else:
-            assert False, "random policy is not supported"
-        f.close()
-
-    # def _train_h5_generator(filepath, policy):
-    #     f = h5py.File(filepath)
-    #     for points, label, seglabel in zip(f["data"], f["pid"], f["seglabel"]):
-    #         yield points, label, seglabel  # shape(4096, 9),(4096, ),(4096, )
-
-    #     f.close()
-
-    train_gen = lambda: _h5_generator(train_filepath, train_load_policy)
-    test_gen = lambda: _h5_generator(test_filepath, test_load_policy)
-    output_types = (tf.float32, tf.int64)
-
-    point_count = data_conf.get("point_count", None)
-    feature_size = data_conf.get("feature_size", None)
-    batch_size = 80
     # output_shapes = ([batch_size, point_count, feature_size], [batch_size, point_count], [batch_size, point_count])
     # output_shapes = (batch_size, point_count, feature_size + 2)
 
     f = h5py.File(train_filepath)
     points, label, seglabel = f["data"],  f["pid"], f["seglabel"]
-
     train_dataset = tf.data.Dataset.from_tensor_slices((points, np.append(np.array(label)[:,np.newaxis,:], np.array(seglabel)[:,np.newaxis,:], axis = 1)))
     f.close()
 
@@ -138,12 +113,8 @@ def load_dataset(dir, model_conf):
     train_dataset, test_dataset = loaders[conf["type"]["name"]](dir, conf, **model_conf)
     batch_size = model_conf["control"]["batch_size"]
 
-    # train_dataset = pass
     # train_dataset = apply_transforms(train_dataset, model_conf["dataset"].get("train_transforms", []), batch_size)
     # test_dataset = apply_transforms(test_dataset, model_conf["dataset"].get("test_transforms", []), batch_size)
-    print(train_dataset)
-    print(test_dataset)
-    exit()
     return train_dataset, test_dataset, conf
 
 
