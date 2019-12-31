@@ -27,8 +27,8 @@ class ConfigManager:
         :return: None
         """
         assert callable(conf_func), f"The registed configuration function is not callable"
-        assert (scope, name) not in self.map, \
-            f"The \"{name}\" has already been registered in scope \"{scope}\", which is \"{self.map[(scope, name)]}\""
+        #assert (scope, name) not in self.map, \
+        #    f"The \"{name}\" has already been registered in scope \"{scope}\", which is \"{self.map[(scope, name)]}\""
         assert scope in ConfigManager.SCOPES, f"\"{scope}\" is not in {ConfigManager.SCOPES}"
 
         self.flat_map.setdefault(name, []).append(conf_func)

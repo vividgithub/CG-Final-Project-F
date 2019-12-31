@@ -1,13 +1,14 @@
 import shutil
 import re
 import layers
-from tensorflow import keras
+from sgpn import PointNet, SGPNOutput
 import tensorflow_core as tf
 import math
 from os import path, makedirs
 import logger
 from utils.kerasutil import ModelCallback
 from utils.confutil import object_from_conf, register_conf
+from SGPNLosses import SGPNloss
 
 # A fake call to register
 register_conf(name="adam", scope="optimizer", conf_func=lambda conf: tf.keras.optimizers.Adam(**conf))(None)
@@ -188,19 +189,28 @@ def net_from_config(model_conf, data_conf):
     if "extend_feature" in net_conf:
         logger.log("\"extend_feature\" is deprecated, use \"input-feature-extend\" layer instead", color="yellow")
 
-    inputs = tf.keras.Input(shape=(point_count, feature_size))
+    #changed lines
+    input1 = tf.keras.Input(shape=(point_count, feature_size))
+    label1 = tf.keras.Input(shape=(point_count))
+    label2 = tf.keras.Input(shape=(point_count))
+    inputs = [input1, label1, label2]
     if net_conf["structure"] == "sequence":
-        x =  inputs # Input layer
+        x = inputs  # Input layer
 
+        '''
+        shabidaimanimasile
         for layer_conf in net_conf["layers"]:
             logger.log(f"In constructing: {layer_conf}")
             layer = layer_from_config(layer_conf, model_conf, data_conf)
             logger.log(f"Input={x}")
             x = layer(x)
             logger.log(f"Output={x}")
-
-        outputs = x
-        return tf.keras.Model(inputs=inputs, outputs=outputs)
+        '''
+        pointNetOutput = PointNet(x)
+        outputs = SGPNOutput(pointNetOutput)
+        #changed line
+        return tf.keras.Model(inputs=inputs, outputs=outputs), inputs, outputs
+    
     elif net_conf["structure"] == "graph":
         layer_confs = net_conf["layers"]
         graph_conf = net_conf["graph"]
@@ -362,7 +372,8 @@ class ModelRunner:
 
         # Get the network
         logger.log("Creating network, train_dataset={}, test_dataset={}".format(self.train_dataset, self.test_dataset))
-        net = net_from_config(self.model_conf, self.data_conf)
+        #changed line
+        net, inputs, outputs = net_from_config(self.model_conf, self.data_conf)
 
         # Get the learning_rate and optimizer
         logger.log("Creating learning rate schedule")
@@ -371,9 +382,10 @@ class ModelRunner:
         optimizer = optimizer_from_config(lr_schedule, control_conf["optimizer"])
 
         # Get the loss
-        loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, name="Loss")
+        #loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, name="Loss")
+        loss = SGPNloss
 
-        # Get the metrics #测度
+        # Get the metrics
         # We add a logits loss in the metrics since the total loss will have regularization term
         metrics = [
             tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
@@ -412,10 +424,11 @@ class ModelRunner:
                                        batch_size, save_dir(), infos=infos, step_offset=step_offset)
 
         logger.log("Compile network, loss={}, metrics={}".format(loss, metrics))
-        net.compile(optimizer, loss=loss, metrics=metrics)
+        #changed line
+        net.add_loss(loss([inputs[1], inputs[2]], outputs))
+        net.trainable = True
+        net.compile(optimizer, metrics=metrics)
 
-        net.summary()
-        '''
         logger.log("Summary of the network:")
         net.summary(line_length=240, print_fn=lambda x: logger.log(x, prefix=False))
 
@@ -427,4 +440,4 @@ class ModelRunner:
             callbacks=[tensorboard_callback, model_callback],
             shuffle=False  # We do the shuffle ourself
         )
-        '''
+        net.save_weights("sgpnmodel/sgpn.tf")

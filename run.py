@@ -10,6 +10,11 @@ from os import listdir, sep, makedirs
 from utils.datasetutil import load_dataset
 from utils.modelutil import ModelRunner
 
+import tensorflow as tf
+gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.9)
+config = tf.compat.v1.ConfigProto(gpu_options=gpu_options)
+sess = tf.compat.v1.Session(config = config)
+
 CLI_DESCRIPTION = """
 Run a model based on provided model configuration file
 """
@@ -42,9 +47,9 @@ def parse_path(*paths):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=CLI_DESCRIPTION)
-    parser.add_argument("model_config", type=str, help="The path for model configuration")
+    parser.add_argument("model_config", type=str, default="conf/sgpn/sgpn.pyconf", help="The path for model configuration")
     parser.add_argument("-d", "--data", type=str, default="", help=DATA_OPTIONS_DESCRIPTION)
-    parser.add_argument("-s", "--save", type=str, default="", help=SAVE_OPTIONS_DESCRIPTION)
+    parser.add_argument("-s", "--save", type=str, default="results", help=SAVE_OPTIONS_DESCRIPTION)
     parser.add_argument("-m", "--mode", type=str, default="new", help=MODE_OPTIONS_DESCRIPTION)
     args = parser.parse_args()
 
@@ -107,28 +112,20 @@ if __name__ == "__main__":
 
     # Get the data conf
     train_dataset, test_dataset, data_conf = load_dataset(data_dir, model_conf)
+    
+    #print some of the dataset
+    #fileout = open("tmp.txt","a")
+#    count = 0
+#    for i in train_dataset:
+#        print(i)
+#        count = count + 1
+#        if count == 10: break
+
     # Initialize the ModelRunner
     model_name = model_conf_path.split(sep)[-1]  # Get the last component of the path
     model_name = model_name[:model_name.rfind(".")]  # Remove the .pyconf
     model_name = "".join([x.capitalize() for x in model_name.split("_")])  # Move lower case to camel case
 
-    '''
-    with open("param.json", "a") as f:
-        
-        f.write("model_conf: " + str(model_conf) + "\n")
-        f.write(str(type(model_conf)) + "\n")
-        f.write("data_conf: " + str(data_conf) + "\n")
-        f.write(str(type(data_conf)) + "\n")
-        f.write("model_name: " + str(model_name) + "\n")
-        f.write(str(type(model_name)) + "\n")
-        f.write("save_dir: " + str(save_dir) + "\n")
-        f.write(str(type(save_dir)) + "\n")
-        f.write("train_dataset: " + str(train_dataset) + "\n")
-        f.write(str(type(train_dataset)) + "\n")
-        
-        f.write("test_dataset: " + str(test_dataset) + "\n")
-        f.write(str(type(test_dataset)) + "\n")
-    '''
     log(f"Model name: {model_name}")
     model_runner = ModelRunner(model_conf, data_conf, model_name, save_dir, train_dataset, test_dataset, mode=mode)
 

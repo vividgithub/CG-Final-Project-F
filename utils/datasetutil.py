@@ -78,19 +78,20 @@ def load_dataset_h5(dir, data_conf, train_load_policy="normal", test_load_policy
 
     f = h5py.File(train_filepath)
     points, label, seglabel = f["data"],  f["pid"], f["seglabel"]
-    train_dataset = tf.data.Dataset.from_tensor_slices((points, np.append(np.array(label)[:,np.newaxis,:], np.array(seglabel)[:,np.newaxis,:], axis = 1)))
+    #train_dataset = tf.data.Dataset.from_tensor_slices((points, np.append(np.array(label)[:,np.newaxis,:], np.array(seglabel)[:,np.newaxis,:], axis = 1)))
+    train_dataset = tf.data.Dataset.from_tensor_slices({'input_1':points, 'input_2':label, 'input_3':seglabel}).repeat(10).batch(4)
     f.close()
 
     f = h5py.File(test_filepath)
     points, label, seglabel = f["data"],  f["pid"], f["seglabel"]
-    test_dataset = tf.data.Dataset.from_tensor_slices((points, np.append(np.array(label)[:,np.newaxis,:], np.array(seglabel)[:,np.newaxis,:], axis = 1)))
+    #test_dataset = tf.data.Dataset.from_tensor_slices((points, np.append(np.array(label)[:,np.newaxis,:], np.array(seglabel)[:,np.newaxis,:], axis = 1)))
+    test_dataset = tf.data.Dataset.from_tensor_slices({'input_1':points, 'input_2':label, 'input_3':seglabel}).batch(4)
     f.close()
 
     return (
         train_dataset,
         test_dataset
     )
-
 
 def load_dataset(dir, model_conf):
     """
@@ -113,8 +114,8 @@ def load_dataset(dir, model_conf):
     train_dataset, test_dataset = loaders[conf["type"]["name"]](dir, conf, **model_conf)
     batch_size = model_conf["control"]["batch_size"]
 
-    # train_dataset = apply_transforms(train_dataset, model_conf["dataset"].get("train_transforms", []), batch_size)
-    # test_dataset = apply_transforms(test_dataset, model_conf["dataset"].get("test_transforms", []), batch_size)
+    #train_dataset = apply_transforms(train_dataset, model_conf["dataset"].get("train_transforms", []), batch_size)
+    #test_dataset = apply_transforms(test_dataset, model_conf["dataset"].get("test_transforms", []), batch_size)
     return train_dataset, test_dataset, conf
 
 

@@ -41,7 +41,7 @@ class XConvLayerCoreV1(tf.keras.layers.Layer):
     def batch_normalization(self, inputs, name, training):
         layer = self.sub_layers.get(name)
         if not layer:
-            layer = tf.keras.layers.BatchNormalization(momentum=0.9, name=name)
+            layer = tf.keras.layers.BatchNormalization(momentum=0.99, name=name)
             self.sub_layers[name] = layer
         return layer(inputs, training=training)
 
